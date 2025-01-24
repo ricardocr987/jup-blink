@@ -6,7 +6,22 @@
     "dev": "bun run --watch src/index.ts"
   },
   "dependencies": {
-    "elysia": "latest"
+    "@elysiajs/cors": "^1.2.0",
+    "@elysiajs/eden": "^1.2.0",
+    "@elysiajs/static": "^1.2.0",
+    "@elysiajs/swagger": "^1.2.0",
+    "@solana-program/compute-budget": "^0.6.1",
+    "@solana-program/system": "^0.6.2",
+    "@solana-program/token": "^0.4.1",
+    "@solana/actions": "^1.6.6",
+    "@solana/addresses": "^2.0.0",
+    "@solana/keys": "^2.0.0",
+    "@solana/rpc-types": "^2.0.0",
+    "@solana/signers": "^2.0.0",
+    "@solana/transactions": "^2.0.0",
+    "@solana/web3.js": "^2.0.0-edge",
+    "bignumber.js": "^9.1.2",
+    "ky": "^1.7.4"
   },
   "devDependencies": {
     "bun-types": "latest"
