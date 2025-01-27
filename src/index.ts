@@ -1,10 +1,14 @@
 import { Elysia, t } from 'elysia';
-import { staticPlugin } from '@elysiajs/static';
 import { swagger } from '@elysiajs/swagger';
 import { cors } from '@elysiajs/cors';
 import { buildTransaction } from "./solana/transaction/build/buildTransaction";
 import { sendTransaction } from "./solana/transaction/send";
 import { Address } from '@solana/addresses';
+import { getPortfolio } from './portfolios';
+import { staticPlugin } from '@elysiajs/static'
+import { Action, ActionPostResponse, ActionError, ActionGetResponse } from '@solana/actions';
+import bs58 from 'bs58';
+import nacl from 'tweetnacl';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
@@ -14,28 +18,27 @@ const ACTION_HEADERS: Record<string, string> = {
   'Content-Type': 'application/json'
 };
 
-interface PortfolioSwapInfo {
-  icon: string;
-  title: string;
-  description: string;
-}
-
-function getPortfolioSwapInfo(): PortfolioSwapInfo {
-  return {
-    icon: `${BASE_URL}/media/jupiter.png`,
-    title: "Portfolio Token Swap",
-    description: "Swap any token into a diversified portfolio"
-  };
-}
-
 const SUPPORTED_TOKENS = [
-  { label: "USDC", value: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" },
-  { label: "SOL", value: "So11111111111111111111111111111111111111112" },
-  { label: "mSOL", value: "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So" },
-  { label: "BONK", value: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263" }
+  { label: "USDC", value: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", selected: true },
+  { label: "SOL", value: "So11111111111111111111111111111111111111112", selected: false },
+  { label: "mSOL", value: "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So", selected: false },
+  { label: "BONK", value: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", selected: false }
 ] as const;
 
+const message = 'Connect your wallet to swap tokens into a diversified portfolio';
+function verifySignature(message: string, signature: string, account: string) {
+  const messageBytes = new TextEncoder().encode(message);
+  const signatureBytes = bs58.decode(signature);
+  const publicKeyBytes = bs58.decode(account);
+  return nacl.sign.detached.verify(
+    messageBytes,
+    signatureBytes,
+    Uint8Array.from(publicKeyBytes),
+  );
+}
+
 const app = new Elysia()
+  .use(staticPlugin())
   .use(swagger({
     documentation: {
       info: {
@@ -64,8 +67,6 @@ const app = new Elysia()
       'X-Action-Version',
       'X-Blockchain-Ids'
     ],
-    maxAge: 3600,
-    credentials: false
   }))
   .onRequest(({ request, set }) => {
     const path = new URL(request.url).pathname;
@@ -76,11 +77,17 @@ const app = new Elysia()
         ...ACTION_HEADERS
       };
     }
+
+    if (request.method === 'OPTIONS') {
+      set.status = 200;
+      return new Response(null);
+    }
   })
   .get("/actions.json", ({ set }) => {
     return {
       rules: [
-        { pathPattern: '/api/actions/**', apiPath: '/api/actions/**' }
+        { pathPattern: '/*', apiPath: '/api/actions/*' },
+        { pathPattern: '/api/actions/**', apiPath: '/api/actions/**' },
       ],
       metadata: {
         name: "Portfolio Swap Action",
@@ -93,9 +100,14 @@ const app = new Elysia()
         openGraph: {
           title: "Portfolio Swap Blink",
           description: "Swap any token into a diversified portfolio",
-          image: `${BASE_URL}/media/jupiter.png`,
+          image: new URL("/media/DTF.jpg", BASE_URL).toString(),
           url: BASE_URL
-        }
+        },
+        interstitialUrls: [
+          "https://backpack.app",
+          "https://phantom.app",
+          "https://solflare.com"
+        ]
       }
     };
   }, {
@@ -109,75 +121,224 @@ const app = new Elysia()
       }
     }
   })
-  .get("/api/actions/portfolio-swap", () => {
-    const { icon, title, description } = getPortfolioSwapInfo();
+  .get("/api/actions/portfolio-swap/:portfolioId", ({ params }) => {
+    const signMessageAction = {
+      type: 'action',
+      label: 'Sign statement',
+      icon: `${BASE_URL}/public/media/DTF.jpg`,
+      title: 'Sign statement',
+      description: 'This is sign statement',
+      links: {
+        actions: [
+          {
+            type: 'message',
+            href: `/api/actions/portfolio-swap/${params.portfolioId}`,
+            label: 'Connect Wallet',
+          },
+        ],
+      },
+    } satisfies Action;
+    return signMessageAction;
+  })
+  .post("/api/actions/portfolio-swap/:portfolioId", ({ params }) => {
+    const response = {
+      type: 'message',
+      data: message,
+      links: {
+        next: {
+          type: 'post',
+          href: `/api/actions/portfolio-swap/${params.portfolioId}/verify-signature`,
+          label: 'Verify Signature',
+        },
+      },
+    };
 
-    return {
-      type: "action",
-      icon,
-      title,
-      description,
+    return response;
+  }, {
+    detail: {
+      tags: ['Actions'],
+      description: 'Sign a message'
+    }
+  })
+  .post("/api/actions/portfolio-swap/:portfolioId/verify-signature", async ({ body, params }) => {
+    const { signature, account } = body;
+    const { portfolioId } = params;
+
+    if (!signature) {
+      return {
+        message: 'Signature is required',
+      } satisfies ActionError;
+    }
+
+    const isSignatureValid = verifySignature(message, signature, account);
+    
+    if (!isSignatureValid) {
+      return {
+        type: 'action',
+        title: 'Signature invalid',
+        description: `Invalid message signature!
+account = ${account}
+message = ${message}
+signature = ${signature}`,
+        icon: `${BASE_URL}/public/media/DTF.jpg`,
+        label: 'Invalid Signature'
+      } satisfies Action;
+    }
+
+    const response: Action = {
+      type: 'action',
+      icon: `${BASE_URL}/public/media/DTF.jpg`,
+      title: `Swap to Portfolio`,
+      description: `Swap to Portfolio`,
       label: "Swap to Portfolio",
       links: {
         actions: [
           {
             type: "transaction",
             label: "Swap to Portfolio",
-            href: "/api/actions/portfolio-swap",
+            href: `/api/actions/portfolio-swap/${portfolioId}?inputToken={inputToken}&amount={amount}&slippageBps={slippageBps}`,
             parameters: [
               {
                 name: "inputToken",
                 label: "Select Token to Swap",
                 type: "select", 
                 required: true,
-                options: SUPPORTED_TOKENS,
-                description: "Choose the token you want to swap from"
+                options: SUPPORTED_TOKENS.map(({ label, value, selected }) => ({
+                  label,
+                  value,
+                  selected
+                })),
               },
               {
                 name: "amount",
                 label: "Amount to Swap",
                 type: "number",
                 required: true,
-                minimum: 0,
-                description: "Enter the amount of tokens to swap",
-                placeholder: "0.00"
               },
               {
                 name: "slippageBps",
                 label: "Slippage Tolerance",
                 type: "select",
                 required: false,
-                default: "100",
                 options: [
-                  { label: "0.1%", value: "10" },
-                  { label: "0.5%", value: "50" },
-                  { label: "1.0%", value: "100" },
-                  { label: "2.0%", value: "200" }
+                  { label: "0.1%", value: "10", selected: false },
+                  { label: "0.5%", value: "50", selected: false },
+                  { label: "1.0%", value: "100", selected: true },
+                  { label: "2.0%", value: "200", selected: false }
                 ],
-                description: "Choose your maximum slippage tolerance"
               }
             ]
           }
-        ],
-      },
+        ]
+      }
     };
+
+    return response;
   }, {
+    body: t.Object({
+      signature: t.String({
+        description: 'Base58 encoded signature',
+        pattern: '^[1-9A-HJ-NP-Za-km-z]{87,88}$'
+      }),
+      account: t.String({
+        description: 'Wallet address of the signer',
+        pattern: '^[1-9A-HJ-NP-Za-km-z]{32,44}$'
+      }),
+      state: t.Optional(t.Any())
+    }),
     detail: {
-      tags: ['Portfolio'],
-      description: 'Get portfolio swap action details',
+      tags: ['Actions'],
+      description: 'Verify a message signature',
       responses: {
         200: {
-          description: 'Portfolio swap action details'
+          description: 'Signature verification result'
+        },
+        400: {
+          description: 'Invalid signature or account'
         }
       }
     }
   })
-  .post(
-    "/api/actions/portfolio-swap",
-    async ({ body }) => {
+  .post('/api/actions/portfolio-swap/:portfolioId/:account/ask',
+    async ({ body, params }) => {
       try {
+        console.log('execute', body, params);
+
+        return {
+          type: "action",
+          icon: `${BASE_URL}/public/media/DTF.jpg`,
+          title: `Swap to Portfolio`,
+          description: `Swap to Portfolio`,
+          label: "Swap to Portfolio",
+          links: {
+            actions: [
+              {
+                type: "transaction",
+                label: "Swap to Portfolio",
+                href: `/api/actions/portfolio-swap/${params.portfolioId}/${params.account}`,
+                parameters: [
+                  {
+                    name: "inputToken",
+                    label: "Select Token to Swap",
+                    type: "select", 
+                    required: true,
+                    options: SUPPORTED_TOKENS.map(({ label, value, selected }) => ({
+                      label,
+                      value,
+                      selected
+                    })),
+                  },
+                  {
+                    name: "amount",
+                    label: "Amount to Swap",
+                    type: "number",
+                    required: true,
+                  },
+                  {
+                    name: "slippageBps",
+                    label: "Slippage Tolerance",
+                    type: "select",
+                    required: false,
+                    options: [
+                      { label: "0.1%", value: "10", selected: false },
+                      { label: "0.5%", value: "50", selected: false },
+                      { label: "1.0%", value: "100", selected: true },
+                      { label: "2.0%", value: "200", selected: false }
+                    ],
+                  }
+                ]
+              }
+            ]
+          }
+        } satisfies Action
+      } catch (error) {
+        return {
+          error: {
+            message: error instanceof Error ? error.message : "Failed to create swap transaction",
+            code: "TRANSACTION_CREATION_FAILED"
+          }
+        };
+      }
+    }
+  )
+  .post(
+    "/api/actions/portfolio-swap/:portfolioId/:account/execute",
+    async ({ body, params }) => {
+      try {
+        console.log('execute', body, params);
+        //@ts-ignore
         const { account, inputToken, amount, slippageBps = 100 } = body;
         
+        const portfolio = getPortfolio(params.portfolioId);
+        if (!portfolio) {
+          return {
+            error: {
+              message: "Portfolio not found",
+              code: "PORTFOLIO_NOT_FOUND"
+            }
+          };
+        }
+
         if (!account) {
           return {
             error: {
@@ -186,32 +347,32 @@ const app = new Elysia()
           };
         }
 
-        const portfolio = [{ token: "SOL", percentage: 100 }];
-
+        // TODO: adapt this to multiple tokens
         const transactionData = {
           type: "swap" as const,
           signer: account as Address,
           inputToken: inputToken as Address,
-          outputToken: portfolio[0].token as Address,
+          outputToken: portfolio.allocation[0].token as Address,
           amount,
           slippageBps,
         };
-
         const transaction = await buildTransaction(transactionData);
 
-        return {
+        const action: ActionPostResponse = {
           type: "transaction",
-          transaction: transaction,
-          message: `Swapping ${amount} tokens to portfolio: ${portfolio
+          transaction,
+          message: `Swapping ${amount} tokens to portfolio: ${portfolio.allocation
             .map(({ token, percentage }) => `${percentage}% ${token}`)
             .join(", ")}`,
           links: {
             next: {
               type: "post",
-              href: "/api/actions/portfolio-swap/confirm"
+              href: `/api/actions/portfolio-swap/${params.portfolioId}/confirm`
             }
           }
         };
+
+        return action;
       } catch (error) {
         return {
           error: {
@@ -221,7 +382,7 @@ const app = new Elysia()
         };
       }
     },
-    {
+    /*{
       body: t.Object({
         account: t.String({
           description: 'Wallet address of the user',
@@ -255,10 +416,10 @@ const app = new Elysia()
           }
         },
       }
-    }
+    }*/
   )
   .post(
-    "/api/actions/portfolio-swap/confirm",
+    "/api/actions/portfolio-swap/:portfolioId/confirm",
     async ({ body }) => {
       try {
         if (!body.transaction) {
@@ -310,3 +471,77 @@ const app = new Elysia()
   .listen(3000);
 
 console.log(`🦊 Portfolio Swap Blink is running at ${app.server?.hostname}:${app.server?.port}`);
+
+/*
+  .get("/api/actions/portfolio-swap/:portfolioId/:account", ({ params }) => {
+    const portfolio = getPortfolio(params.portfolioId);
+    
+    if (!portfolio) {
+      return {
+        error: {
+          message: "Portfolio not found",
+          code: "PORTFOLIO_NOT_FOUND"
+        }
+      };
+    }
+    const action: ActionGetResponse = {
+      type: "action",
+      icon: `${BASE_URL}/public/media/DTF.jpg`,
+      title: `${portfolio.name} - Swap to Portfolio`,
+      description: portfolio.description,
+      label: "Swap to Portfolio",
+      links: {
+        actions: [
+          {
+            type: "transaction",
+            label: "Swap to Portfolio",
+            href: `/api/actions/portfolio-swap/${params.portfolioId}/${params.account}?inputToken={inputToken}&amount={amount}&slippageBps={slippageBps}`,
+            parameters: [
+              {
+                name: "inputToken",
+                label: "Select Token to Swap",
+                type: "select", 
+                required: true,
+                options: SUPPORTED_TOKENS.map(({ label, value, selected }) => ({
+                  label,
+                  value,
+                  selected
+                })),
+              },
+              {
+                name: "amount",
+                label: "Amount to Swap",
+                type: "number",
+                required: true,
+              },
+              {
+                name: "slippageBps",
+                label: "Slippage Tolerance",
+                type: "select",
+                required: false,
+                options: [
+                  { label: "0.1%", value: "10", selected: false },
+                  { label: "0.5%", value: "50", selected: false },
+                  { label: "1.0%", value: "100", selected: true },
+                  { label: "2.0%", value: "200", selected: false }
+                ],
+              }
+            ]
+          }
+        ]
+      }
+    };
+
+    return action;
+  }, {
+    detail: {
+      tags: ['Portfolio'],
+      description: 'Get portfolio swap action details',
+      responses: {
+        200: {
+          description: 'Portfolio swap action details'
+        }
+      }
+    }
+  })
+*/
