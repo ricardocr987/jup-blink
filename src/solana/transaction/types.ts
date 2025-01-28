@@ -13,15 +13,19 @@ export type TransferData = BaseTransactionData & {
   amount: number;
 };
 
-export type SwapData = BaseTransactionData & {
-  type: 'swap';
-  inputToken: Address;
-  outputToken: Address;
+export type SwapData = {
+  inputToken: string;
+  outputToken: string;
   amount: number;
   slippageBps: number;
 };
 
-export type TransactionData = TransferData | SwapData;
+export type TransactionData = {
+  type: 'swap';
+  signer: Address;
+  swaps: SwapData[];
+  slippageBps: number;
+};
 
 export type SimulationResult = {
   units: number;

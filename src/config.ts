@@ -6,11 +6,13 @@ export const config = {
     SUPABASE_KEY: process.env.SUPABASE_KEY!,
     RPC_KEY: process.env.RPC_KEY || 'GET_A_FALLBACK_KEY',
     BIRDEYE_API_KEY: process.env.BIRDEYE_API_KEY!,
+    JUPITER_API_KEY: process.env.JUPITER_API_KEY!,
 };
   
 const requiredEnvVariables = [
     "RPC_KEY",
-    "BIRDEYE_API_KEY"
+    "BIRDEYE_API_KEY",
+    "JUPITER_API_KEY"
 ];
   
 requiredEnvVariables.forEach((variable) => {

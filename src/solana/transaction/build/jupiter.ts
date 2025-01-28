@@ -1,13 +1,22 @@
+import { RawInstruction } from "../types";
+import { config } from "../../../config";
+
+const headers = {
+  'Content-Type': 'application/json',
+  'x-api-key': config.JUPITER_API_KEY
+};
+
 async function getJupiterQuote(inputToken: string, outputToken: string, amount: number, slippageBps: number) {
-  const response = await fetch(`https://quote-api.jup.ag/v6/quote`, {
+  const params = new URLSearchParams({
+    inputMint: inputToken,
+    outputMint: outputToken,
+    amount: amount.toString(),
+    slippageBps: slippageBps.toString()
+  });
+
+  const response = await fetch(`https://api.jup.ag/swap/v1/quote?${params}`, {
     method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      inputMint: inputToken,
-      outputMint: outputToken,
-      amount: amount.toString(),
-      slippageBps: slippageBps
-    })
+    headers
   });
 
   const quote = await response.json();
@@ -18,21 +27,32 @@ async function getJupiterQuote(inputToken: string, outputToken: string, amount: 
 }
 
 async function getJupiterInstructions(quoteResponse: any, userPublicKey: string) {
-  const response = await fetch('https://quote-api.jup.ag/v6/swap-instructions', {
+  const response = await fetch('https://api.jup.ag/swap/v1/swap-instructions', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({
-      quoteResponse,
+      quote: quoteResponse,
       userPublicKey
     })
   });
 
-  const instructions = await response.json();
-  if (instructions.error) {
-    throw new Error(`Failed to get swap instructions: ${instructions.error}`);
+  const swapData = await response.json();
+  if (swapData.error) {
+    throw new Error(`Failed to get swap instructions: ${swapData.error}`);
   }
 
-  return instructions;
+  if (!swapData.instructions || !Array.isArray(swapData.instructions)) {
+    throw new Error(`Invalid swap instructions response: ${JSON.stringify(swapData)}`);
+  }
+
+  return {
+    instructions: swapData.instructions.map((ix: any) => ({
+      programId: ix.programId,
+      accounts: ix.accounts,
+      data: ix.data
+    })),
+    lookupTableAddresses: swapData.lookupTableAddresses || []
+  };
 }
 
 export async function buildJupiterInstructions(
@@ -41,7 +61,10 @@ export async function buildJupiterInstructions(
   amount: number,
   slippageBps: number,
   userPublicKey: string
-) {
+): Promise<{
+  instructions: RawInstruction[];
+  lookupTableAddresses: string[];
+}> {
   const quote = await getJupiterQuote(
     inputToken,
     outputToken,

@@ -1,7 +1,5 @@
-import { address } from '@solana/addresses';
 import { type IInstruction, type IAccountMeta, type Address, AccountRole } from '@solana/web3.js';
-import { createNoopSigner } from '@solana/signers';
-import { TransactionData, RawInstruction } from '../types';
+import { TransactionData, SwapData, RawInstruction } from '../types';
 import { buildJupiterInstructions } from './jupiter';
 import { getMints } from '../../fetcher/getMint';
 import { getTokenPrice } from '../../birdeye';
@@ -30,37 +28,60 @@ async function calculateTokenAmount(tokenMint: string, usdcAmount: number, decim
   return rawAmount.integerValue(BigNumber.ROUND_DOWN).toString();
 }
 
-export async function getTransactionInstructions(data: TransactionData): Promise<{ instructions: IInstruction<string>[], lookupTableAddresses: string[] }> {
-  const signer = createNoopSigner(address(data.signer));
+async function processSwap(
+  swap: SwapData,
+  mints: Record<string, { decimals: number }>,
+  signer: string
+): Promise<{
+  instructions: IInstruction<string>[];
+  lookupTableAddresses: string[];
+}> {
+  const inputDecimals = mints[swap.inputToken]?.decimals ?? 9;
+  
+  const inputAmount = await calculateTokenAmount(
+    swap.inputToken,
+    swap.amount,
+    inputDecimals
+  );
+  
+  const jupiterResponse = await buildJupiterInstructions(
+    swap.inputToken,
+    swap.outputToken,
+    Number(inputAmount),
+    swap.slippageBps,
+    signer
+  );
 
+  return {
+    instructions: jupiterResponse.instructions.map(ix => deserializeInstruction(JSON.stringify(ix))),
+    lookupTableAddresses: jupiterResponse.lookupTableAddresses
+  };
+}
+
+export async function getTransactionInstructions(
+  data: TransactionData
+): Promise<{ 
+  instructions: IInstruction<string>[],
+  lookupTableAddresses: string[] 
+}> {
   switch (data.type) {
     case 'swap': {
-      const mints = await getMints([data.inputToken, data.outputToken]);
-      const inputDecimals = mints[data.inputToken]?.decimals ?? 9;
-      const outputDecimals = mints[data.outputToken]?.decimals ?? 9;
-      const inputAmount = await calculateTokenAmount(data.inputToken, data.amount, inputDecimals);
-      const outputAmount = new BigNumber(data.amount)
-        .multipliedBy(new BigNumber(10).pow(outputDecimals))
-        .integerValue(BigNumber.ROUND_DOWN)
-        .toString();
-        
-      const { instructions, lookupTableAddresses } = await buildJupiterInstructions(
-        data.inputToken,
-        data.outputToken,
-        Number(outputAmount),
-        data.slippageBps,
-        data.signer
+      const uniqueMints = [...new Set(
+        data.swaps.flatMap(swap => [swap.inputToken, swap.outputToken])
+      )];
+      const mints = await getMints(uniqueMints);
+      const swapResults = await Promise.all(
+        data.swaps.map(swap => processSwap(
+          { ...swap, slippageBps: data.slippageBps },
+          mints,
+          data.signer
+        ))
       );
 
-      /*const transferInstruction = await buildTransferInstruction(
-        signer,
-        data.to,
-        Number(outputAmount),
-        data.outputToken as Address,
-        outputDecimals
-      );
-
-      instructions.push(...transferInstruction);*/
+      const instructions = swapResults.flatMap(result => result.instructions);
+      const lookupTableAddresses = [...new Set(
+        swapResults.flatMap(result => result.lookupTableAddresses)
+      )];
 
       return { instructions, lookupTableAddresses };
     }

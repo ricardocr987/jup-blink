@@ -23,12 +23,19 @@ export async function buildTransaction(
   priorityLevel?: "LOW" | "MEDIUM" | "HIGH" | "VERY_HIGH"
 ): Promise<string> {
   try {
+    console.log("data", data);
+
     const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
-    const { instructions, lookupTableAddresses } = await getTransactionInstructions(data);
-    const lookupTableAccounts = await fetchLookupTables(lookupTableAddresses as Address[], rpc);
+    const { instructions, lookupTableAddresses } = 
+      await getTransactionInstructions(data);
+
+    const lookupTableAccounts = await fetchLookupTables(
+      lookupTableAddresses as Address[], 
+      rpc
+    );
 
     const finalInstructions = await prepareComputeBudget(
-      instructions, 
+      instructions,
       data.signer,
       lookupTableAccounts,
       priorityLevel
@@ -42,7 +49,10 @@ export async function buildTransaction(
       tx => appendTransactionMessageInstructions(finalInstructions, tx),
     );
 
-    const messageWithLookupTables = compressTransactionMessageUsingAddressLookupTables(message, lookupTableAccounts);
+    const messageWithLookupTables = compressTransactionMessageUsingAddressLookupTables(
+      message, 
+      lookupTableAccounts
+    );
     const compiledMessage = compileTransaction(messageWithLookupTables);
     
     return getBase64EncodedWireTransaction(compiledMessage).toString();

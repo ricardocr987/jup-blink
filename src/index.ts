@@ -9,6 +9,8 @@ import { staticPlugin } from '@elysiajs/static'
 import { Action, ActionPostResponse, ActionError, ActionGetResponse } from '@solana/actions';
 import bs58 from 'bs58';
 import nacl from 'tweetnacl';
+import { getTokens } from './solana/fetcher/getTokens';
+import BigNumber from 'bignumber.js';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
@@ -17,13 +19,6 @@ const ACTION_HEADERS: Record<string, string> = {
   'X-Blockchain-Ids': 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
   'Content-Type': 'application/json'
 };
-
-const SUPPORTED_TOKENS = [
-  { label: "USDC", value: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", selected: true },
-  { label: "SOL", value: "So11111111111111111111111111111111111111112", selected: false },
-  { label: "mSOL", value: "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So", selected: false },
-  { label: "BONK", value: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", selected: false }
-] as const;
 
 const message = 'Connect your wallet to swap tokens into a diversified portfolio';
 function verifySignature(message: string, signature: string, account: string) {
@@ -185,55 +180,81 @@ signature = ${signature}`,
       } satisfies Action;
     }
 
-    const response: Action = {
-      type: 'action',
-      icon: `${BASE_URL}/public/media/DTF.jpg`,
-      title: `Swap to Portfolio`,
-      description: `Swap to Portfolio`,
-      label: "Swap to Portfolio",
-      links: {
-        actions: [
-          {
-            type: "transaction",
-            label: "Swap to Portfolio",
-            href: `/api/actions/portfolio-swap/${portfolioId}?inputToken={inputToken}&amount={amount}&slippageBps={slippageBps}`,
-            parameters: [
-              {
-                name: "inputToken",
-                label: "Select Token to Swap",
-                type: "select", 
-                required: true,
-                options: SUPPORTED_TOKENS.map(({ label, value, selected }) => ({
-                  label,
-                  value,
-                  selected
-                })),
-              },
-              {
-                name: "amount",
-                label: "Amount to Swap",
-                type: "number",
-                required: true,
-              },
-              {
-                name: "slippageBps",
-                label: "Slippage Tolerance",
-                type: "select",
-                required: false,
-                options: [
-                  { label: "0.1%", value: "10", selected: false },
-                  { label: "0.5%", value: "50", selected: false },
-                  { label: "1.0%", value: "100", selected: true },
-                  { label: "2.0%", value: "200", selected: false }
-                ],
-              }
-            ]
-          }
-        ]
-      }
-    };
+    try {
+      const userTokens = await getTokens(account);
+      const sortedTokens = userTokens
+        .sort((a, b) => parseFloat(b.value) - parseFloat(a.value))
+        .slice(0, 5);
 
-    return response;
+      if (sortedTokens.length === 0) {
+        return {
+          type: 'action',
+          icon: `${BASE_URL}/public/media/DTF.jpg`,
+          title: 'No tokens found',
+          description: 'No tokens with sufficient balance were found in your wallet',
+          label: 'No Tokens'
+        } satisfies Action;
+      }
+
+      const response: Action = {
+        type: 'action',
+        icon: `${BASE_URL}/public/media/DTF.jpg`,
+        title: `Swap to Portfolio`,
+        description: `Swap to Portfolio`,
+        label: "Swap to Portfolio",
+        links: {
+          actions: [
+            {
+              type: "transaction",
+              label: "Swap to Portfolio",
+              href: `/api/actions/portfolio-swap/${portfolioId}/transaction`,
+              parameters: [
+                {
+                  name: "inputToken",
+                  label: "Select Token to Swap",
+                  type: "select", 
+                  required: true,
+                  options: sortedTokens.map(token => ({
+                    label: `${token.metadata.symbol} (${parseFloat(token.amount).toFixed(2)})`,
+                    value: token.mint,
+                    selected: token === sortedTokens[0]
+                  })),
+                },
+                {
+                  name: "amount",
+                  label: "Amount to Swap",
+                  type: "number",
+                  required: true,
+                },
+                {
+                  name: "slippageBps",
+                  label: "Slippage Tolerance",
+                  type: "select",
+                  required: false,
+                  options: [
+                    { label: "0.1%", value: "10", selected: false },
+                    { label: "0.5%", value: "50", selected: false },
+                    { label: "1.0%", value: "100", selected: true },
+                    { label: "2.0%", value: "200", selected: false }
+                  ],
+                }
+              ]
+            }
+          ]
+        }
+      };
+
+      return response;
+    } catch (error) {
+      console.error('Error fetching user tokens:', error);
+      return {
+        type: 'action',
+        icon: `${BASE_URL}/public/media/DTF.jpg`,
+        title: 'Error',
+        description: 'Failed to fetch your token balances. Please try again.',
+        label: 'Error'
+      } satisfies Action;
+    }
   }, {
     body: t.Object({
       signature: t.String({
@@ -259,77 +280,14 @@ signature = ${signature}`,
       }
     }
   })
-  .post('/api/actions/portfolio-swap/:portfolioId/:account/ask',
-    async ({ body, params }) => {
-      try {
-        console.log('execute', body, params);
-
-        return {
-          type: "action",
-          icon: `${BASE_URL}/public/media/DTF.jpg`,
-          title: `Swap to Portfolio`,
-          description: `Swap to Portfolio`,
-          label: "Swap to Portfolio",
-          links: {
-            actions: [
-              {
-                type: "transaction",
-                label: "Swap to Portfolio",
-                href: `/api/actions/portfolio-swap/${params.portfolioId}/${params.account}`,
-                parameters: [
-                  {
-                    name: "inputToken",
-                    label: "Select Token to Swap",
-                    type: "select", 
-                    required: true,
-                    options: SUPPORTED_TOKENS.map(({ label, value, selected }) => ({
-                      label,
-                      value,
-                      selected
-                    })),
-                  },
-                  {
-                    name: "amount",
-                    label: "Amount to Swap",
-                    type: "number",
-                    required: true,
-                  },
-                  {
-                    name: "slippageBps",
-                    label: "Slippage Tolerance",
-                    type: "select",
-                    required: false,
-                    options: [
-                      { label: "0.1%", value: "10", selected: false },
-                      { label: "0.5%", value: "50", selected: false },
-                      { label: "1.0%", value: "100", selected: true },
-                      { label: "2.0%", value: "200", selected: false }
-                    ],
-                  }
-                ]
-              }
-            ]
-          }
-        } satisfies Action
-      } catch (error) {
-        return {
-          error: {
-            message: error instanceof Error ? error.message : "Failed to create swap transaction",
-            code: "TRANSACTION_CREATION_FAILED"
-          }
-        };
-      }
-    }
-  )
   .post(
-    "/api/actions/portfolio-swap/:portfolioId/:account/execute",
+    "/api/actions/portfolio-swap/:portfolioId/transaction",
     async ({ body, params }) => {
       try {
-        console.log('execute', body, params);
-        //@ts-ignore
-        const { account, inputToken, amount, slippageBps = 100 } = body;
-        
-        const portfolio = getPortfolio(params.portfolioId);
+        const { account, data: { inputToken, amount, slippageBps = 100 } } = body;
+        const { portfolioId } = params;
+        const portfolio = getPortfolio(portfolioId);
+
         if (!portfolio) {
           return {
             error: {
@@ -347,29 +305,41 @@ signature = ${signature}`,
           };
         }
 
-        // TODO: adapt this to multiple tokens
+        const totalAmount = new BigNumber(amount);
+        const swaps = Object.values(portfolio.token_metrics).map(token => {
+          console.log('processing token', token);
+          const swapAmount = totalAmount
+            .multipliedBy(token.weight)
+            .multipliedBy(1e9)
+            .decimalPlaces(0, BigNumber.ROUND_DOWN);
+          
+          console.log('swapAmount', swapAmount.toString());
+
+          return {
+            inputToken: inputToken as string,
+            outputToken: token.address,
+            amount: swapAmount.toNumber(),
+            slippageBps: Number(slippageBps),
+          };
+        }).filter(swap => swap.amount > 0);
+
+        console.log('swaps', swaps);
+
         const transactionData = {
           type: "swap" as const,
           signer: account as Address,
-          inputToken: inputToken as Address,
-          outputToken: portfolio.allocation[0].token as Address,
-          amount,
-          slippageBps,
+          swaps,
+          slippageBps: Number(slippageBps),
         };
+
         const transaction = await buildTransaction(transactionData);
 
         const action: ActionPostResponse = {
           type: "transaction",
           transaction,
-          message: `Swapping ${amount} tokens to portfolio: ${portfolio.allocation
-            .map(({ token, percentage }) => `${percentage}% ${token}`)
+          message: `Swapping ${amount} tokens to ${portfolio.name}: ${Object.values(portfolio.token_metrics)
+            .map(({ symbol, weight }) => `${(weight * 100).toFixed(1)}% ${symbol}`)
             .join(", ")}`,
-          links: {
-            next: {
-              type: "post",
-              href: `/api/actions/portfolio-swap/${params.portfolioId}/confirm`
-            }
-          }
         };
 
         return action;
@@ -382,24 +352,25 @@ signature = ${signature}`,
         };
       }
     },
-    /*{
+    {
       body: t.Object({
         account: t.String({
-          description: 'Wallet address of the user',
+          description: 'Wallet address of the signer',
           pattern: '^[1-9A-HJ-NP-Za-km-z]{32,44}$'
         }),
-        inputToken: t.String({
-          description: 'Token address to swap from'
-        }),
-        amount: t.Number({ 
-          minimum: 0,
-          description: 'Amount of tokens to swap'
-        }),
-        slippageBps: t.Optional(t.Number({ 
-          minimum: 0, 
-          maximum: 1000,
-          description: 'Slippage tolerance in basis points'
-        }))
+        data: t.Object({
+          inputToken: t.String({
+            description: 'Token address to swap from',
+            pattern: '^[1-9A-HJ-NP-Za-km-z]{32,44}$'
+          }),
+          amount: t.String({ 
+            description: 'Amount of tokens to swap'
+          }),
+          slippageBps: t.Optional(t.String({ 
+            description: 'Slippage tolerance in basis points',
+            default: 100
+          }))
+        })
       }),
       detail: {
         tags: ['Portfolio'],
@@ -414,9 +385,9 @@ signature = ${signature}`,
           401: {
             description: 'Invalid wallet address'
           }
-        },
+        }
       }
-    }*/
+    }
   )
   .post(
     "/api/actions/portfolio-swap/:portfolioId/confirm",
@@ -471,77 +442,3 @@ signature = ${signature}`,
   .listen(3000);
 
 console.log(`🦊 Portfolio Swap Blink is running at ${app.server?.hostname}:${app.server?.port}`);
-
-/*
-  .get("/api/actions/portfolio-swap/:portfolioId/:account", ({ params }) => {
-    const portfolio = getPortfolio(params.portfolioId);
-    
-    if (!portfolio) {
-      return {
-        error: {
-          message: "Portfolio not found",
-          code: "PORTFOLIO_NOT_FOUND"
-        }
-      };
-    }
-    const action: ActionGetResponse = {
-      type: "action",
-      icon: `${BASE_URL}/public/media/DTF.jpg`,
-      title: `${portfolio.name} - Swap to Portfolio`,
-      description: portfolio.description,
-      label: "Swap to Portfolio",
-      links: {
-        actions: [
-          {
-            type: "transaction",
-            label: "Swap to Portfolio",
-            href: `/api/actions/portfolio-swap/${params.portfolioId}/${params.account}?inputToken={inputToken}&amount={amount}&slippageBps={slippageBps}`,
-            parameters: [
-              {
-                name: "inputToken",
-                label: "Select Token to Swap",
-                type: "select", 
-                required: true,
-                options: SUPPORTED_TOKENS.map(({ label, value, selected }) => ({
-                  label,
-                  value,
-                  selected
-                })),
-              },
-              {
-                name: "amount",
-                label: "Amount to Swap",
-                type: "number",
-                required: true,
-              },
-              {
-                name: "slippageBps",
-                label: "Slippage Tolerance",
-                type: "select",
-                required: false,
-                options: [
-                  { label: "0.1%", value: "10", selected: false },
-                  { label: "0.5%", value: "50", selected: false },
-                  { label: "1.0%", value: "100", selected: true },
-                  { label: "2.0%", value: "200", selected: false }
-                ],
-              }
-            ]
-          }
-        ]
-      }
-    };
-
-    return action;
-  }, {
-    detail: {
-      tags: ['Portfolio'],
-      description: 'Get portfolio swap action details',
-      responses: {
-        200: {
-          description: 'Portfolio swap action details'
-        }
-      }
-    }
-  })
-*/

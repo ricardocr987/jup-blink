@@ -132,7 +132,6 @@ export async function prepareComputeBudget(
     const compiledMessage = compileTransaction(messageWithLookupTables);
     const wireTransaction = getBase64EncodedWireTransaction(compiledMessage);
 
-    // Get compute units and priority fee in parallel
     const [computeUnits, priorityFee] = await Promise.all([
       getComputeUnits(wireTransaction),
       getPriorityFeeEstimate(wireTransaction, {
@@ -142,10 +141,7 @@ export async function prepareComputeBudget(
         evaluateEmptySlotAsZero: true
       })
     ]);
-
-    console.log('Priority fee:', priorityFee);
     
-    // Create compute budget instructions
     const computeBudgetIx = getSetComputeUnitLimitInstruction({
       units: computeUnits * 1.1
     });
