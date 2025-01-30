@@ -3,7 +3,6 @@ import { config } from "../../../config";
 
 const headers = {
   'Content-Type': 'application/json',
-  'x-api-key': config.JUPITER_API_KEY
 };
 
 async function getJupiterQuote(inputToken: string, outputToken: string, amount: number, slippageBps: number) {
@@ -11,7 +10,9 @@ async function getJupiterQuote(inputToken: string, outputToken: string, amount: 
     inputMint: inputToken,
     outputMint: outputToken,
     amount: amount.toString(),
-    slippageBps: slippageBps.toString()
+    slippageBps: slippageBps.toString(),
+    restrictIntermediateTokens: 'true',
+    onlyDirectRoutes: 'true',
   });
 
   const response = await fetch(`https://api.jup.ag/swap/v1/quote?${params}`, {
@@ -31,7 +32,7 @@ async function getJupiterInstructions(quoteResponse: any, userPublicKey: string)
     method: 'POST',
     headers,
     body: JSON.stringify({
-      quote: quoteResponse,
+      quoteResponse,
       userPublicKey
     })
   });
@@ -41,17 +42,30 @@ async function getJupiterInstructions(quoteResponse: any, userPublicKey: string)
     throw new Error(`Failed to get swap instructions: ${swapData.error}`);
   }
 
-  if (!swapData.instructions || !Array.isArray(swapData.instructions)) {
-    throw new Error(`Invalid swap instructions response: ${JSON.stringify(swapData)}`);
-  }
+  const {
+    tokenLedgerInstruction,
+    computeBudgetInstructions,
+    setupInstructions,
+    swapInstruction,
+    cleanupInstruction,
+    addressLookupTableAddresses
+  } = swapData;
+
+  const allInstructions = [
+    ...(setupInstructions || []),
+    swapInstruction,
+    ...(cleanupInstruction ? [cleanupInstruction] : [])
+  ].filter(Boolean);
+
+  const instructions = allInstructions.map((ix: any) => ({
+    programId: ix.programId,
+    accounts: ix.accounts,
+    data: ix.data
+  }));
 
   return {
-    instructions: swapData.instructions.map((ix: any) => ({
-      programId: ix.programId,
-      accounts: ix.accounts,
-      data: ix.data
-    })),
-    lookupTableAddresses: swapData.lookupTableAddresses || []
+    instructions,
+    lookupTableAddresses: addressLookupTableAddresses || []
   };
 }
 

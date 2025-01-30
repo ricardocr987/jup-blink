@@ -23,8 +23,6 @@ export async function buildTransaction(
   priorityLevel?: "LOW" | "MEDIUM" | "HIGH" | "VERY_HIGH"
 ): Promise<string> {
   try {
-    console.log("data", data);
-
     const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
     const { instructions, lookupTableAddresses } = 
       await getTransactionInstructions(data);

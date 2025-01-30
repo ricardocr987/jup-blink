@@ -11,6 +11,9 @@ import bs58 from 'bs58';
 import nacl from 'tweetnacl';
 import { getTokens } from './solana/fetcher/getTokens';
 import BigNumber from 'bignumber.js';
+import { getPrices } from './solana/fetcher/getPrices';
+import { getMints, type DecodedMint } from './solana/fetcher/getMint';
+import { SwapData } from './solana/transaction/types';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
@@ -305,25 +308,65 @@ signature = ${signature}`,
           };
         }
 
-        const totalAmount = new BigNumber(amount);
-        const swaps = Object.values(portfolio.token_metrics).map(token => {
-          console.log('processing token', token);
-          const swapAmount = totalAmount
-            .multipliedBy(token.weight)
-            .multipliedBy(1e9)
-            .decimalPlaces(0, BigNumber.ROUND_DOWN);
-          
-          console.log('swapAmount', swapAmount.toString());
+        // Get all token addresses including input token
+        const tokenAddresses = [
+          inputToken,
+          ...Object.values(portfolio.token_metrics).map(t => t.address)
+        ];
 
-          return {
-            inputToken: inputToken as string,
-            outputToken: token.address,
-            amount: swapAmount.toNumber(),
-            slippageBps: Number(slippageBps),
-          };
-        }).filter(swap => swap.amount > 0);
+        // Fetch prices and mint info for all tokens
+        const [prices, mints] = await Promise.all([
+          getPrices(tokenAddresses),
+          getMints(tokenAddresses)
+        ]);
 
-        console.log('swaps', swaps);
+        const inputTokenPrice = prices[inputToken];
+        const inputTokenMint = mints[inputToken];
+
+        if (!inputTokenPrice || !inputTokenMint) {
+          throw new Error(`Could not get price or mint info for input token ${inputToken}`);
+        }
+
+        // Calculate total input value in USD first
+        const totalInputValue = new BigNumber(amount)
+          .multipliedBy(inputTokenPrice)
+          .decimalPlaces(6);
+
+        const swaps = Object.values(portfolio.token_metrics)
+          .map(token => {
+            const outputTokenPrice = prices[token.address];
+            const outputTokenMint = mints[token.address];
+
+            if (!outputTokenPrice || !outputTokenMint) {
+              console.warn(`Missing price or mint info for token ${token.address}, skipping swap`);
+              return null;
+            }
+
+            // Calculate target value in USD for this token
+            const targetValue = totalInputValue.multipliedBy(token.weight);
+            
+            // Calculate the input amount needed for this swap
+            const inputAmount = new BigNumber(amount)
+              .multipliedBy(token.weight)
+              .multipliedBy(10 ** inputTokenMint.decimals)
+              .decimalPlaces(0, BigNumber.ROUND_DOWN);
+
+            if (inputAmount.isLessThanOrEqualTo(0)) {
+              return null;
+            }
+
+            return {
+              inputToken: inputToken as string,
+              outputToken: token.address,
+              amount: inputAmount.toNumber(),
+              slippageBps: Number(slippageBps),
+            };
+          })
+          .filter((swap): swap is SwapData => swap !== null);
+
+        if (swaps.length === 0) {
+          throw new Error("No valid swaps could be calculated");
+        }
 
         const transactionData = {
           type: "swap" as const,
@@ -337,9 +380,11 @@ signature = ${signature}`,
         const action: ActionPostResponse = {
           type: "transaction",
           transaction,
-          message: `Swapping ${amount} tokens to ${portfolio.name}: ${Object.values(portfolio.token_metrics)
-            .map(({ symbol, weight }) => `${(weight * 100).toFixed(1)}% ${symbol}`)
-            .join(", ")}`,
+          message: `Swapping ${new BigNumber(amount).dividedBy(10 ** inputTokenMint.decimals).toString()} tokens to ${portfolio.name}: ${
+            Object.values(portfolio.token_metrics)
+              .map(({ symbol, weight }) => `${(weight * 100).toFixed(1)}% ${symbol}`)
+              .join(", ")
+          }`,
         };
 
         return action;
