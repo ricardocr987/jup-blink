@@ -90,14 +90,14 @@ const app = new Elysia()
       metadata: {
         name: "Portfolio Swap Action",
         version: "1.0.0",
-        description: "Swap tokens into a diversified portfolio",
+        description: "Swap tokens into a diversified portfolio with a single click",
         maintainer: {
-          name: "Your Name",
-          url: "https://yourwebsite.com"
+          name: "Franklin AI",
+          url: "https://dtf.fun"
         },
         openGraph: {
           title: "Portfolio Swap Blink",
-          description: "Swap any token into a diversified portfolio",
+          description: "Swap any token into a diversified portfolio with a single click",
           image: new URL("/media/DTF.jpg", BASE_URL).toString(),
           url: BASE_URL
         },
