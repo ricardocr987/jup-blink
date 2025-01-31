@@ -55,7 +55,7 @@ interface PriorityFeeResponse {
 }
 
 const DEFAULT_COMPUTE_UNITS = 1_400_000;
-const DEFAULT_PRIORITY_FEE = 10000;
+const DEFAULT_PRIORITY_FEE = 100000;
 
 async function getComputeUnits(wireTransaction: Base64EncodedWireTransaction): Promise<number> {
   try {
@@ -76,7 +76,7 @@ async function getComputeUnits(wireTransaction: Base64EncodedWireTransaction): P
     return computeUnits;
   } catch (error) {
     console.error('Error simulating transaction:', error);
-    return DEFAULT_COMPUTE_UNITS;
+    throw error;
   }
 }
 
@@ -100,7 +100,6 @@ async function getPriorityFeeEstimate(
     }).json<PriorityFeeResponse>();
     
     if (!data.result?.priorityFeeEstimate) {
-      console.error('Invalid priority fee response');
       return DEFAULT_PRIORITY_FEE;
     }
 
@@ -152,12 +151,6 @@ export async function prepareComputeBudget(
 
     return [computeBudgetIx, priorityFeeIx, ...instructions];
   } catch (error) {
-    console.error('Error in prepareComputeBudget:', error);
-    // Return default compute budget instructions if something goes wrong
-    return [
-      getSetComputeUnitLimitInstruction({ units: DEFAULT_COMPUTE_UNITS }),
-      getSetComputeUnitPriceInstruction({ microLamports: DEFAULT_PRIORITY_FEE }),
-      ...instructions
-    ];
+    throw error;
   }
 } 

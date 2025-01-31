@@ -6,8 +6,8 @@ export type TokenMetadata = {
   symbol: string;
   decimals: number;
   logoURI: string;
-  tags: string[];
-  daily_volume: number;
+  tags?: string[];
+  daily_volume?: number;
 };
 
 const FALLBACK_METADATA: Partial<TokenMetadata> = {

@@ -42,10 +42,10 @@ const app = new Elysia()
       info: {
         title: 'Portfolio Swap Blink API',
         version: '1.0.0',
-        description: 'API for swapping tokens into a diversified portfolio',
+        description: "Swap tokens into a diversified portfolio with a single click",
         contact: {
-          name: 'Your Name',
-          url: 'https://yourwebsite.com'
+          name: "Franklin AI",
+          url: "https://dtf.fun"
         }
       },
       tags: [
@@ -122,10 +122,10 @@ const app = new Elysia()
   .get("/api/actions/portfolio-swap/:portfolioId", ({ params }) => {
     const signMessageAction = {
       type: 'action',
-      label: 'Sign statement',
+      label: 'Connect wallet',
       icon: `${BASE_URL}/public/media/DTF.jpg`,
-      title: 'Sign statement',
-      description: 'This is sign statement',
+      title: 'Connect wallet',
+      description: 'Connect your wallet to swap tokens into a diversified portfolio',
       links: {
         actions: [
           {
@@ -244,6 +244,9 @@ signature = ${signature}`,
               ]
             }
           ]
+        },
+        error: {
+          message: 'Failed to build transaction',
         }
       };
 
@@ -389,11 +392,10 @@ signature = ${signature}`,
 
         return action;
       } catch (error) {
+        console.error('Error building transaction:', error);
         return {
-          error: {
-            message: error instanceof Error ? error.message : "Failed to create swap transaction",
-            code: "TRANSACTION_CREATION_FAILED"
-          }
+          message: 'Failed to build transaction',
+          label: 'Error'
         };
       }
     },
@@ -429,56 +431,6 @@ signature = ${signature}`,
           },
           401: {
             description: 'Invalid wallet address'
-          }
-        }
-      }
-    }
-  )
-  .post(
-    "/api/actions/portfolio-swap/:portfolioId/confirm",
-    async ({ body }) => {
-      try {
-        if (!body.transaction) {
-          return {
-            error: {
-              message: "No transaction provided",
-              code: "INVALID_TRANSACTION"
-            }
-          };
-        }
-
-        const signature = await sendTransaction(body.transaction);
-        
-        return {
-          type: "transaction",
-          transaction: body.transaction,
-          message: `Transaction confirmed with signature: ${signature}`,
-          signature
-        };
-      } catch (error) {
-        return {
-          error: {
-            message: error instanceof Error ? error.message : "Failed to confirm transaction",
-            code: "TRANSACTION_CONFIRMATION_FAILED"
-          }
-        };
-      }
-    },
-    {
-      body: t.Object({
-        transaction: t.String({
-          description: 'Base64 encoded transaction to confirm'
-        })
-      }),
-      detail: {
-        tags: ['Portfolio'],
-        description: 'Confirm and send a portfolio swap transaction',
-        responses: {
-          200: {
-            description: 'Transaction confirmed successfully'
-          },
-          400: {
-            description: 'Invalid transaction'
           }
         }
       }

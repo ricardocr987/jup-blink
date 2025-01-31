@@ -22,12 +22,11 @@ export async function buildTransaction(
   data: TransactionData, 
   priorityLevel?: "LOW" | "MEDIUM" | "HIGH" | "VERY_HIGH"
 ): Promise<string> {
-  try {
     const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
     const { instructions, lookupTableAddresses } = 
       await getTransactionInstructions(data);
-
-    const lookupTableAccounts = await fetchLookupTables(
+      
+      const lookupTableAccounts = await fetchLookupTables(
       lookupTableAddresses as Address[], 
       rpc
     );
@@ -54,11 +53,6 @@ export async function buildTransaction(
     const compiledMessage = compileTransaction(messageWithLookupTables);
     
     return getBase64EncodedWireTransaction(compiledMessage).toString();
-
-  } catch (error) {
-    console.error("Error building transaction:", error);
-    throw error;
-  }
 }
 
 type FetchedAddressLookup = {

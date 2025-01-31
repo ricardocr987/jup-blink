@@ -97,23 +97,11 @@ export async function getPrices(
           }
 
           prices[mint] = price;
-          
-          // Log confidence level if available
-          if (data.extraInfo?.confidenceLevel) {
-            console.log(`Price confidence for ${mint}: ${data.extraInfo.confidenceLevel}`);
-          }
         });
       } catch (error) {
         console.warn(`Failed to fetch prices for chunk ${i/chunkSize + 1}:`, error);
       }
     }
-
-    // Log summary
-    console.log('Price fetch summary:', {
-      totalMints: mints.length,
-      pricesFound: Object.keys(prices).length,
-      missingPrices: mints.filter(mint => !prices[mint]).length
-    });
 
     return prices;
 

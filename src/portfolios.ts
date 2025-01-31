@@ -27,6 +27,52 @@ const PORTFOLIO_DATA: PortfolioResponse = {
   "request_id": "1fb5d277-a948-40de-a99f-9fa748c07e30",
   "optimal_portfolios": [
     {
+      "name": "balanced-portfolio",
+      "annual_returns": 0.95,
+      "annual_volatility": 0.45,
+      "sharpe_ratio": 2.11,
+      "diversification_ratio": 0.08,
+      "num_assets": 5,
+      "token_metrics": {
+        "RNDR:4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R:solana": {
+          "weight": 0.30,
+          "annual_return": 1.15,
+          "annual_volatility": 0.85,
+          "sharpe_ratio": 1.35,
+          "symbol": "RNDR",
+          "address": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+          "chain": "solana"
+        },
+        "PYTH:6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN:solana": {
+          "weight": 0.20,
+          "annual_return": 0.95,
+          "annual_volatility": 0.65,
+          "sharpe_ratio": 1.46,
+          "symbol": "PYTH",
+          "address": "6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN",
+          "chain": "solana"
+        },
+        "POPCAT:7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr:solana": {
+          "weight": 0.15,
+          "annual_return": 0.85,
+          "annual_volatility": 0.55,
+          "sharpe_ratio": 1.55,
+          "symbol": "POPCAT",
+          "address": "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr",
+          "chain": "solana"
+        },
+        "JELLYJELLY:FeR8VBqNRSUD5NtXAj2n3j1dAHkZHfyDktKuLXD4pump:solana": {
+          "weight": 0.15,
+          "annual_return": 0.95,
+          "annual_volatility": 0.70,
+          "sharpe_ratio": 1.36,
+          "symbol": "JELLYJELLY",
+          "address": "FeR8VBqNRSUD5NtXAj2n3j1dAHkZHfyDktKuLXD4pump",
+          "chain": "solana"
+        },
+      }
+    },
+    {
       "name": "grandpa-portfolio",
       "annual_returns": 0.87,
       "annual_volatility": 0.37,
@@ -102,9 +148,6 @@ const PORTFOLIOS: Record<string, Portfolio> = Object.fromEntries(
 );
 
 export function getPortfolio(id: string): Portfolio | null {
-  console.log('looking up portfolio', id);
-  console.log('available portfolios', Object.keys(PORTFOLIOS));
   const portfolio = PORTFOLIOS[id];
-  console.log('found portfolio', portfolio);
   return portfolio || null;
 } 

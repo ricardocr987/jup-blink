@@ -72,8 +72,6 @@ async function fetchMetadata(mintAddresses: string[]) {
     })
     .json<BirdeyeResponse<Record<string, BirdeyeTokenMetadata>>>();
 
-  console.log(response);
-
   if (!response?.data || typeof response.data !== 'object') {
     throw new Error('No metadata returned from Birdeye');
   }
