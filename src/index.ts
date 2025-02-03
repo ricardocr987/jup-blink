@@ -292,7 +292,7 @@ signature = ${signature}`,
       try {
         const { account, data: { inputToken, amount, slippageBps = 100 } } = body;
         const { portfolioId } = params;
-        const portfolio = getPortfolio(portfolioId);
+        const portfolio = await getPortfolio(portfolioId);
 
         if (!portfolio) {
           return {
@@ -345,10 +345,7 @@ signature = ${signature}`,
               return null;
             }
 
-            // Calculate target value in USD for this token
-            const targetValue = totalInputValue.multipliedBy(token.weight);
-            
-            // Calculate the input amount needed for this swap
+            // Calculate the input amount needed for this swap based on portfolio weight
             const inputAmount = new BigNumber(amount)
               .multipliedBy(token.weight)
               .multipliedBy(10 ** inputTokenMint.decimals)
