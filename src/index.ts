@@ -1,18 +1,17 @@
-import { Elysia, t } from 'elysia';
+import { Elysia, error, t } from 'elysia';
 import { swagger } from '@elysiajs/swagger';
 import { cors } from '@elysiajs/cors';
 import { buildTransaction } from "./solana/transaction/build/buildTransaction";
-import { sendTransaction } from "./solana/transaction/send";
 import { Address } from '@solana/addresses';
 import { getPortfolio } from './portfolios';
 import { staticPlugin } from '@elysiajs/static'
 import { Action, ActionPostResponse, ActionError, ActionGetResponse } from '@solana/actions';
 import bs58 from 'bs58';
 import nacl from 'tweetnacl';
-import { getTokens } from './solana/fetcher/getTokens';
+import { getMainTokens } from './solana/fetcher/getTokens';
 import BigNumber from 'bignumber.js';
 import { getPrices } from './solana/fetcher/getPrices';
-import { getMints, type DecodedMint } from './solana/fetcher/getMint';
+import { getMints } from './solana/fetcher/getMint';
 import { SwapData } from './solana/transaction/types';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
@@ -33,6 +32,65 @@ function verifySignature(message: string, signature: string, account: string) {
     signatureBytes,
     Uint8Array.from(publicKeyBytes),
   );
+}
+
+async function validateTokenAmount(
+  account: string,
+  inputToken: string,
+  amount: string
+): Promise<{ isValid: boolean; error?: ActionPostResponse }> {
+  try {
+    const userTokens = await getMainTokens(account);
+    const selectedToken = userTokens.find(t => t.mint === inputToken);
+
+    if (!selectedToken) {
+      return {
+        isValid: false,
+        error: {
+          type: 'transaction',
+          transaction: '',
+          message: 'Selected token not found in wallet',
+        } satisfies ActionPostResponse
+      };
+    }
+
+    const inputAmount = new BigNumber(amount);
+    const userBalance = new BigNumber(selectedToken.amount);
+
+    if (inputAmount.isGreaterThan(userBalance)) {
+      return {
+        isValid: false,
+        error: {
+          type: 'transaction',
+          transaction: '',
+          message: `Insufficient balance. You have ${userBalance.toFixed(4)} ${selectedToken.metadata.symbol}`,
+        } satisfies ActionPostResponse
+      };
+    }
+
+    if (inputAmount.isLessThanOrEqualTo(0)) {
+      return {
+        isValid: false,
+        error: {
+          type: 'transaction',
+          transaction: '',
+          message: 'Amount must be greater than 0',
+        } satisfies ActionPostResponse
+      };
+    }
+
+    return { isValid: true };
+  } catch (error) {
+    console.error('Error validating token amount:', error);
+    return {
+      isValid: false,
+      error: {
+        type: 'transaction',
+        transaction: '',
+        message: 'Failed to validate token amount',
+      } satisfies ActionPostResponse
+    };
+  }
 }
 
 const app = new Elysia()
@@ -184,18 +242,22 @@ signature = ${signature}`,
     }
 
     try {
-      const userTokens = await getTokens(account);
+      const userTokens = await getMainTokens(account);
       const sortedTokens = userTokens
         .sort((a, b) => parseFloat(b.value) - parseFloat(a.value))
         .slice(0, 5);
 
+      // note: already removed tokens with insufficient balance (holding value < 0.01)
       if (sortedTokens.length === 0) {
         return {
           type: 'action',
           icon: `${BASE_URL}/public/media/DTF.jpg`,
-          title: 'No tokens found',
-          description: 'No tokens with sufficient balance were found in your wallet',
-          label: 'No Tokens'
+          title: 'Swap to Portfolio',
+          description: 'Swap tokens into a diversified portfolio with a single click',
+          label: 'Swap tokens into a diversified portfolio with a single click',
+          error: {
+            message: `No tokens with sufficient balance were found in your wallet`,
+          },
         } satisfies Action;
       }
 
@@ -203,8 +265,8 @@ signature = ${signature}`,
         type: 'action',
         icon: `${BASE_URL}/public/media/DTF.jpg`,
         title: `Swap to Portfolio`,
-        description: `Swap to Portfolio`,
-        label: "Swap to Portfolio",
+        description: `Swap tokens into a diversified portfolio with a single click`,
+        label: "Swap tokens into a diversified portfolio with a single click",
         links: {
           actions: [
             {
@@ -292,23 +354,38 @@ signature = ${signature}`,
       try {
         const { account, data: { inputToken, amount, slippageBps = 100 } } = body;
         const { portfolioId } = params;
+
+        const validation = await validateTokenAmount(account, inputToken, amount);
+        if (!validation.isValid) {
+          return Response.json(validation.error, { status: 500 });
+        }
+
         const portfolio = await getPortfolio(portfolioId);
 
         if (!portfolio) {
           return {
+            type: 'action',
+            icon: `${BASE_URL}/public/media/DTF.jpg`,
+            title: 'Portfolio Not Found',
+            description: 'The selected portfolio does not exist',
+            label: 'Go Back',
             error: {
-              message: "Portfolio not found",
-              code: "PORTFOLIO_NOT_FOUND"
+              message: "Portfolio not found"
             }
-          };
+          } satisfies Action;
         }
 
         if (!account) {
           return {
+            type: 'action',
+            icon: `${BASE_URL}/public/media/DTF.jpg`,
+            title: 'Invalid Wallet',
+            description: 'Please connect your wallet and try again',
+            label: 'Connect Wallet',
             error: {
               message: "Invalid wallet address"
             }
-          };
+          } satisfies Action;
         }
 
         // Get all token addresses including input token
@@ -391,9 +468,15 @@ signature = ${signature}`,
       } catch (error) {
         console.error('Error building transaction:', error);
         return {
-          message: 'Failed to build transaction',
-          label: 'Error'
-        };
+          type: 'action',
+          icon: `${BASE_URL}/public/media/DTF.jpg`,
+          title: 'Transaction Error',
+          description: 'Failed to build the swap transaction. Please try again.',
+          label: 'Try Again',
+          error: {
+            message: 'Failed to build transaction',
+          }
+        } satisfies Action;
       }
     },
     {

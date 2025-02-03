@@ -6,6 +6,10 @@ import { getPrices } from "./getPrices";
 import { TokenAmount } from "@solana/rpc-types";
 import { Address } from "@solana/addresses";
 import { rpc } from '../rpc';
+import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS, decodeToken } from "@solana-program/token";
+import type { EncodedAccount } from "@solana/accounts";
+import { ReadonlyUint8Array } from "@solana/web3.js";
+import type { Base64EncodedDataResponse, StringifiedBigInt, StringifiedNumber } from "@solana/rpc-types";
 
 export type TokenInfo = {
   mint: string;
@@ -18,6 +22,8 @@ export type TokenInfo = {
 
 const THRESHOLD_VALUE_USD = new BigNumber(0.1);
 const WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112";
+const SOL_MINT = 'So11111111111111111111111111111111111111112';
+const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
 function calculateValue(tokenAmount: TokenAmount, decimals: number, price: number): BigNumber {
   try {
@@ -147,5 +153,114 @@ export async function getTokens(userKey: string): Promise<TokenInfo[]> {
   } catch (error) {
     console.error("Error fetching tokens:", error);
     throw error;
+  }
+}
+
+export async function getMainTokens(userKey: string): Promise<TokenInfo[]> {
+  try {
+    const prices = await getPrices([SOL_MINT, USDC_MINT]);
+    const [usdcAta] = await findAssociatedTokenPda({ 
+      mint: USDC_MINT as Address, 
+      owner: userKey as Address, 
+      tokenProgram: TOKEN_PROGRAM_ADDRESS 
+    });
+
+    const tokens: TokenInfo[] = [];
+
+    try {
+      const { value: tokenAccountResponse } = await rpc.getAccountInfo(
+        usdcAta,
+        { encoding: 'base64' }
+      ).send();
+
+      if (tokenAccountResponse?.data) {
+        const [base64Data] = tokenAccountResponse.data as Base64EncodedDataResponse;
+        if (base64Data) {
+          const rawData = Buffer.from(base64Data, 'base64');
+          
+          const encodedAccount: EncodedAccount<string> = {
+            address: usdcAta,
+            data: new Uint8Array(rawData) as ReadonlyUint8Array,
+            executable: tokenAccountResponse.executable,
+            lamports: tokenAccountResponse.lamports,
+            programAddress: tokenAccountResponse.owner,
+          };
+
+          const decodedTokenAccount = decodeToken(encodedAccount);
+          
+          if (decodedTokenAccount) {
+            const amount = decodedTokenAccount.data.amount.toString();
+            const uiAmount = Number(amount) / Math.pow(10, 6);
+            
+            const tokenAmount: TokenAmount = {
+              amount: amount as StringifiedBigInt,
+              decimals: 6,
+              uiAmount,
+              uiAmountString: uiAmount.toString() as StringifiedNumber
+            } as const;
+
+            const price = prices[USDC_MINT] ?? 0;
+            const value = calculateValue(
+              tokenAmount,
+              6,
+              price
+            );
+
+            if (value.isGreaterThan(THRESHOLD_VALUE_USD)) {
+              const metadata = await getTokenMetadata(USDC_MINT);
+              tokens.push({
+                mint: USDC_MINT,
+                address: usdcAta,
+                amount: tokenAmount.uiAmountString,
+                value: value.toFixed(2),
+                decimals: 6,
+                metadata
+              });
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(`Error processing USDC token account:`, error);
+    }
+
+    // Check native SOL balance
+    const { value: solBalance } = await rpc.getBalance(userKey as Address).send();
+    const solPrice = prices[SOL_MINT];
+    const solValue = new BigNumber(solBalance.toString())
+      .dividedBy(10 ** 9)
+      .multipliedBy(solPrice);
+
+    if (solValue.isGreaterThan(THRESHOLD_VALUE_USD)) {
+      const solAmount = solBalance.toString();
+      const solUiAmount = Number(solAmount) / Math.pow(10, 9);
+      
+      const solTokenAmount: TokenAmount = {
+        amount: solAmount as StringifiedBigInt,
+        decimals: 9,
+        uiAmount: solUiAmount,
+        uiAmountString: solUiAmount.toString() as StringifiedNumber
+      } as const;
+
+      tokens.push({
+        mint: SOL_MINT,
+        address: userKey,
+        amount: solTokenAmount.uiAmountString,
+        value: solValue.toFixed(2),
+        decimals: 9,
+        metadata: {
+          name: "Solana",
+          symbol: "SOL",
+          logoURI: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png",
+          address: SOL_MINT,
+          decimals: 9
+        }
+      });
+    }
+
+    return tokens;
+  } catch (error) {
+    console.error('Error fetching basic tokens:', error);
+    return [];
   }
 }
