@@ -18,6 +18,7 @@ import {
 } from '@solana-program/compute-budget';
 import { rpc } from '../rpc';
 import ky from 'ky';
+import { config } from '../../config';
 
 export const PRIORITY_LEVELS = {
   MIN: "Min",
@@ -55,7 +56,7 @@ interface PriorityFeeResponse {
 }
 
 const DEFAULT_COMPUTE_UNITS = 1_400_000;
-const DEFAULT_PRIORITY_FEE = 100000;
+const DEFAULT_PRIORITY_FEE = 50000;
 
 async function getComputeUnits(wireTransaction: Base64EncodedWireTransaction): Promise<number> {
   try {
@@ -85,7 +86,7 @@ async function getPriorityFeeEstimate(
   options: PriorityFeeOptions = {}
 ): Promise<number> {
   try {
-    const data = await ky.post(`https://mainnet.helius-rpc.com/?api-key=${process.env.RPC_KEY!}`, {
+    const data = await ky.post(`https://mainnet.helius-rpc.com/?api-key=${config.HELIUS_API_KEY}`, {
       json: {
         jsonrpc: '2.0',
         id: '1',

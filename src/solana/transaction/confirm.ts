@@ -3,9 +3,10 @@ import { type SolanaRpcResponse, type TransactionError } from '@solana/rpc-types
 import { WebSocket } from 'ws';
 import { rpc } from '../rpc';
 import { sendAndConfirmTransactionFactory } from '@solana/web3.js';
+import { config } from '../../config';
 
 // WebSocket setup
-const wsEndpoint = 'wss://mainnet.helius-rpc.com/?api-key=' + process.env.RPC_KEY!;
+const wsEndpoint = config.RPC_ENDPOINT.replace('https://', 'wss://');
 const ws = new WebSocket(wsEndpoint);
 
 // Types for WebSocket responses

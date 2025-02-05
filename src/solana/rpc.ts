@@ -6,7 +6,7 @@ import {
 
 // RPC HTTP Transport
 const heliusRpcTransport = createDefaultRpcTransport({ 
-  url: `https://mainnet.helius-rpc.com/?api-key=${process.env.RPC_KEY!}` 
+  url: process.env.RPC_ENDPOINT!
 });
 
 // Create API

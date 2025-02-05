@@ -1,18 +1,17 @@
-import { Elysia, error, t } from 'elysia';
+import { Elysia, t } from 'elysia';
 import { swagger } from '@elysiajs/swagger';
 import { cors } from '@elysiajs/cors';
 import { buildTransaction } from "./solana/transaction/build/buildTransaction";
 import { Address } from '@solana/addresses';
-import { getPortfolio } from './portfolios';
+import { getPortfolio, findPortfolioByName, getPortfolioImagePath } from './portfolios';
 import { staticPlugin } from '@elysiajs/static'
-import { Action, ActionPostResponse, ActionError, ActionGetResponse } from '@solana/actions';
-import bs58 from 'bs58';
-import nacl from 'tweetnacl';
+import { Action, ActionPostResponse, ActionError } from '@solana/actions';
 import { getMainTokens } from './solana/fetcher/getTokens';
 import BigNumber from 'bignumber.js';
 import { getPrices } from './solana/fetcher/getPrices';
 import { getMints } from './solana/fetcher/getMint';
 import { SwapData } from './solana/transaction/types';
+import { message, validateTokenAmount, verifySignature } from './validate';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
@@ -21,77 +20,6 @@ const ACTION_HEADERS: Record<string, string> = {
   'X-Blockchain-Ids': 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
   'Content-Type': 'application/json'
 };
-
-const message = 'Connect your wallet to swap tokens into a diversified portfolio';
-function verifySignature(message: string, signature: string, account: string) {
-  const messageBytes = new TextEncoder().encode(message);
-  const signatureBytes = bs58.decode(signature);
-  const publicKeyBytes = bs58.decode(account);
-  return nacl.sign.detached.verify(
-    messageBytes,
-    signatureBytes,
-    Uint8Array.from(publicKeyBytes),
-  );
-}
-
-async function validateTokenAmount(
-  account: string,
-  inputToken: string,
-  amount: string
-): Promise<{ isValid: boolean; error?: ActionPostResponse }> {
-  try {
-    const userTokens = await getMainTokens(account);
-    const selectedToken = userTokens.find(t => t.mint === inputToken);
-
-    if (!selectedToken) {
-      return {
-        isValid: false,
-        error: {
-          type: 'transaction',
-          transaction: '',
-          message: 'Selected token not found in wallet',
-        } satisfies ActionPostResponse
-      };
-    }
-
-    const inputAmount = new BigNumber(amount);
-    const userBalance = new BigNumber(selectedToken.amount);
-
-    if (inputAmount.isGreaterThan(userBalance)) {
-      return {
-        isValid: false,
-        error: {
-          type: 'transaction',
-          transaction: '',
-          message: `Insufficient balance. You have ${userBalance.toFixed(4)} ${selectedToken.metadata.symbol}`,
-        } satisfies ActionPostResponse
-      };
-    }
-
-    if (inputAmount.isLessThanOrEqualTo(0)) {
-      return {
-        isValid: false,
-        error: {
-          type: 'transaction',
-          transaction: '',
-          message: 'Amount must be greater than 0',
-        } satisfies ActionPostResponse
-      };
-    }
-
-    return { isValid: true };
-  } catch (error) {
-    console.error('Error validating token amount:', error);
-    return {
-      isValid: false,
-      error: {
-        type: 'transaction',
-        transaction: '',
-        message: 'Failed to validate token amount',
-      } satisfies ActionPostResponse
-    };
-  }
-}
 
 const app = new Elysia()
   .use(staticPlugin())
@@ -177,13 +105,30 @@ const app = new Elysia()
       }
     }
   })
-  .get("/api/actions/portfolio-swap/:portfolioId", ({ params }) => {
+  .get("/api/actions/portfolio-swap/:portfolioId", async ({ params }) => {
+    const [requestId, portfolioName] = params.portfolioId.split(':');
+    const portfolioResponse = await getPortfolio(requestId);
+    
+    if (!portfolioResponse) {
+      return Response.json({
+        message: 'The selected portfolio does not exist',
+      }, { status: 404 });
+    }
+
+    const portfolio = findPortfolioByName(portfolioResponse, portfolioName);
+
+    if (!portfolio) {
+      return Response.json({
+        message: 'The selected portfolio does not exist',
+      }, { status: 404 });
+    }
+
     const signMessageAction = {
       type: 'action',
       label: 'Connect wallet',
-      icon: `${BASE_URL}/public/media/DTF.jpg`,
+      icon: getPortfolioImagePath(requestId, portfolio.portfolio_metrics.name),
       title: 'Connect wallet',
-      description: 'Connect your wallet to swap tokens into a diversified portfolio',
+      description: `Connect your wallet to swap tokens into ${portfolio.portfolio_metrics.name}`,
       links: {
         actions: [
           {
@@ -242,16 +187,30 @@ signature = ${signature}`,
     }
 
     try {
+      const [requestId, portfolioName] = params.portfolioId.split(':');
+      const portfolioResponse = await getPortfolio(requestId);
+      if (!portfolioResponse) {
+        return Response.json({
+          message: 'The selected portfolio does not exist',
+        }, { status: 404 });
+      }
+
+      const portfolio = findPortfolioByName(portfolioResponse, portfolioName);
+      if (!portfolio) {
+        return Response.json({
+          message: 'The selected portfolio does not exist',
+        }, { status: 404 });
+      }
+
       const userTokens = await getMainTokens(account);
       const sortedTokens = userTokens
         .sort((a, b) => parseFloat(b.value) - parseFloat(a.value))
         .slice(0, 5);
 
-      // note: already removed tokens with insufficient balance (holding value < 0.01)
       if (sortedTokens.length === 0) {
         return {
           type: 'action',
-          icon: `${BASE_URL}/public/media/DTF.jpg`,
+          icon: getPortfolioImagePath(requestId, portfolio.portfolio_metrics.name),
           title: 'Swap to Portfolio',
           description: 'Swap tokens into a diversified portfolio with a single click',
           label: 'Swap tokens into a diversified portfolio with a single click',
@@ -263,7 +222,7 @@ signature = ${signature}`,
 
       const response: Action = {
         type: 'action',
-        icon: `${BASE_URL}/public/media/DTF.jpg`,
+        icon: getPortfolioImagePath(requestId, portfolio.portfolio_metrics.name),
         title: `Swap to Portfolio`,
         description: `Swap tokens into a diversified portfolio with a single click`,
         label: "Swap tokens into a diversified portfolio with a single click",
@@ -280,7 +239,7 @@ signature = ${signature}`,
                   type: "select", 
                   required: true,
                   options: sortedTokens.map(token => ({
-                    label: `${token.metadata.symbol} (${parseFloat(token.amount).toFixed(2)})`,
+                    label: `${token.metadata.symbol} (Current balance: ${parseFloat(parseFloat(token.amount).toFixed(4)).toString()})`,
                     value: token.mint,
                     selected: token === sortedTokens[0]
                   })),
@@ -288,7 +247,7 @@ signature = ${signature}`,
                 {
                   name: "amount",
                   label: "Amount to Swap",
-                  type: "number",
+                  type: "text",
                   required: true,
                 },
                 {
@@ -315,9 +274,12 @@ signature = ${signature}`,
       return response;
     } catch (error) {
       console.error('Error fetching user tokens:', error);
+      const [requestId, portfolioName] = params.portfolioId.split(':');
+      const portfolioResponse = await getPortfolio(requestId);
+      const portfolio = portfolioResponse ? findPortfolioByName(portfolioResponse, portfolioName) : null;
       return {
         type: 'action',
-        icon: `${BASE_URL}/public/media/DTF.jpg`,
+        icon: portfolio ? getPortfolioImagePath(requestId, portfolio.portfolio_metrics.name) : `${BASE_URL}/public/media/DTF.jpg`,
         title: 'Error',
         description: 'Failed to fetch your token balances. Please try again.',
         label: 'Error'
@@ -352,33 +314,33 @@ signature = ${signature}`,
     "/api/actions/portfolio-swap/:portfolioId/transaction",
     async ({ body, params }) => {
       try {
-        const { account, data: { inputToken, amount, slippageBps = 100 } } = body;
-        const { portfolioId } = params;
-
+        const { account, data: { inputToken, amount: rawAmount, slippageBps = 100 } } = body;
+        const amount = rawAmount.replace(',', '.');
+        
+        const [requestId, portfolioName] = params.portfolioId.split(':');
         const validation = await validateTokenAmount(account, inputToken, amount);
         if (!validation.isValid) {
-          return Response.json(validation.error, { status: 500 });
+          return Response.json(validation.error, { status: 501 });
         }
 
-        const portfolio = await getPortfolio(portfolioId);
+        const portfolioResponse = await getPortfolio(requestId);
+        if (!portfolioResponse) {
+          return Response.json({
+            message: 'The selected portfolio does not exist',
+          }, { status: 404 });
+        }
 
+        const portfolio = findPortfolioByName(portfolioResponse, portfolioName);
         if (!portfolio) {
-          return {
-            type: 'action',
-            icon: `${BASE_URL}/public/media/DTF.jpg`,
-            title: 'Portfolio Not Found',
-            description: 'The selected portfolio does not exist',
-            label: 'Go Back',
-            error: {
-              message: "Portfolio not found"
-            }
-          } satisfies Action;
+          return Response.json({
+            message: 'The selected portfolio does not exist',
+          }, { status: 404 });
         }
 
         if (!account) {
           return {
             type: 'action',
-            icon: `${BASE_URL}/public/media/DTF.jpg`,
+            icon: getPortfolioImagePath(requestId, portfolio.portfolio_metrics.name),
             title: 'Invalid Wallet',
             description: 'Please connect your wallet and try again',
             label: 'Connect Wallet',
@@ -388,13 +350,11 @@ signature = ${signature}`,
           } satisfies Action;
         }
 
-        // Get all token addresses including input token
         const tokenAddresses = [
           inputToken,
-          ...Object.values(portfolio.token_metrics).map(t => t.address)
+          ...Object.values(portfolio.portfolio_metrics.token_metrics).map(t => t.address)
         ];
 
-        // Fetch prices and mint info for all tokens
         const [prices, mints] = await Promise.all([
           getPrices(tokenAddresses),
           getMints(tokenAddresses)
@@ -407,13 +367,14 @@ signature = ${signature}`,
           throw new Error(`Could not get price or mint info for input token ${inputToken}`);
         }
 
-        // Calculate total input value in USD first
-        const totalInputValue = new BigNumber(amount)
-          .multipliedBy(inputTokenPrice)
-          .decimalPlaces(6);
-
-        const swaps = Object.values(portfolio.token_metrics)
+        const swaps = Object.values(portfolio.portfolio_metrics.token_metrics)
           .map(token => {
+            // Skip if input and output tokens are the same
+            if (inputToken === token.address) {
+              console.log(`Skipping swap for same token: ${token.symbol}`);
+              return null;
+            }
+
             const outputTokenPrice = prices[token.address];
             const outputTokenMint = mints[token.address];
 
@@ -442,7 +403,7 @@ signature = ${signature}`,
           .filter((swap): swap is SwapData => swap !== null);
 
         if (swaps.length === 0) {
-          throw new Error("No valid swaps could be calculated");
+          throw new Error("No valid swaps could be calculated. This might happen if you're trying to swap to the same token or all swaps were filtered out.");
         }
 
         const transactionData = {
@@ -457,19 +418,18 @@ signature = ${signature}`,
         const action: ActionPostResponse = {
           type: "transaction",
           transaction,
-          message: `Swapping ${new BigNumber(amount).dividedBy(10 ** inputTokenMint.decimals).toString()} tokens to ${portfolio.name}: ${
-            Object.values(portfolio.token_metrics)
-              .map(({ symbol, weight }) => `${(weight * 100).toFixed(1)}% ${symbol}`)
-              .join(", ")
-          }`,
+          message: `Swap completed successfully`
         };
 
         return action;
       } catch (error) {
         console.error('Error building transaction:', error);
+        const [requestId, portfolioName] = params.portfolioId.split(':');
+        const portfolioResponse = await getPortfolio(requestId);
+        const portfolio = portfolioResponse ? findPortfolioByName(portfolioResponse, portfolioName) : null;
         return {
           type: 'action',
-          icon: `${BASE_URL}/public/media/DTF.jpg`,
+          icon: portfolio ? getPortfolioImagePath(requestId, portfolio.portfolio_metrics.name) : `${BASE_URL}/public/media/DTF.jpg`,
           title: 'Transaction Error',
           description: 'Failed to build the swap transaction. Please try again.',
           label: 'Try Again',

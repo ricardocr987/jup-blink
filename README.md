@@ -67,7 +67,8 @@ docker run -p 3000:3000 jup-blink
 ## Environment Variables: Checkout config.ts for more details
 
 - `BASE_URL`: Base URL for the API (default: http://localhost:3000)
-- `RPC_KEY`: Solana RPC key
+- `RPC_ENDPOINT`: Solana RPC endpoint
+- `HELIUS_API_KEY`: Helius API key to get priority fee estimates
 - `BIRDEYE_API_KEY`: BirdEye API key
 - `JUPITER_API_KEY`: Jupiter API key
 
