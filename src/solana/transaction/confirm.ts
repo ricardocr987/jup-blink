@@ -1,9 +1,20 @@
 import { type Signature } from '@solana/keys';
-import { type SolanaRpcResponse, type TransactionError } from '@solana/rpc-types';
+import { 
+  type GetEpochInfoApi, 
+  type GetSignatureStatusesApi, 
+  type Rpc, 
+  type SendTransactionApi,
+} from '@solana/rpc';
+import { 
+  type RpcSubscriptions, 
+  type SignatureNotificationsApi, 
+  type SlotNotificationsApi 
+} from '@solana/rpc-subscriptions';
 import { WebSocket } from 'ws';
 import { rpc } from '../rpc';
-import { sendAndConfirmTransactionFactory } from '@solana/web3.js';
+import { FullySignedTransaction, sendAndConfirmTransactionFactory, TransactionError, TransactionWithBlockhashLifetime } from '@solana/web3.js';
 import { config } from '../../config';
+import { SignatureBytes } from '@solana/web3.js';
 
 // WebSocket setup
 const wsEndpoint = config.RPC_ENDPOINT.replace('https://', 'wss://');
@@ -14,16 +25,16 @@ interface WsNotification {
   jsonrpc: '2.0';
   method: 'signatureNotification';
   params: {
-    result: SolanaRpcResponse<Readonly<{
+    result: {
       err: TransactionError | null;
-    }>>;
+    };
     subscription: number;
   };
 }
 
 // Create RPC subscriptions
-const rpcSubscriptions = {
-  signatureNotifications(signature: Signature) {
+export const rpcSubscriptions: RpcSubscriptions<SignatureNotificationsApi & SlotNotificationsApi> = {
+  signatureNotifications(signature: Signature, config?: Readonly<{ commitment?: 'confirmed' | 'finalized' | 'processed' }>) {
     return {
       async subscribe(options: Readonly<{ abortSignal: AbortSignal }>) {
         const subscriptionId = await new Promise<number>((resolve) => {
@@ -33,7 +44,7 @@ const rpcSubscriptions = {
             method: 'signatureSubscribe',
             params: [
               signature,
-              { commitment: 'confirmed' }
+              { commitment: config?.commitment ?? 'confirmed' }
             ]
           };
 
@@ -65,10 +76,16 @@ const rpcSubscriptions = {
               });
             });
 
-            return { done: true, value: result };
+            return { 
+              done: true, 
+              value: {
+                context: { slot: 0n },
+                value: { err: result.err }
+              }
+            };
           },
           [Symbol.asyncIterator]() {
-            return this;
+            return notifications;
           },
         };
 
@@ -88,24 +105,19 @@ const rpcSubscriptions = {
   slotNotifications(_?: Record<string, never>) {
     return {
       async subscribe() {
-        return {
+        const iterator = {
           async next() {
             return { done: true, value: { parent: 0n, root: 0n, slot: 0n } };
           },
           [Symbol.asyncIterator]() {
-            return this;
-          }
+            return iterator;
+          },
         };
-      }
+        return iterator;
+      },
     };
   }
 };
-
-// Create transaction sender with WebSocket confirmation
-export const sendAndConfirmTransaction = sendAndConfirmTransactionFactory({
-  rpc,
-  rpcSubscriptions,
-});
 
 // Cleanup WebSocket on process exit
 process.on('SIGINT', () => {

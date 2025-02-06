@@ -108,7 +108,8 @@ const app = new Elysia()
     }
   })
   .get("/api/actions/portfolio-swap/:portfolioId", async ({ params }) => {
-    const [requestId, portfolioName] = params.portfolioId.split(':');
+    const decodedPortfolioId = decodeURIComponent(params.portfolioId);
+    const [requestId, portfolioName] = decodedPortfolioId.split(':');
     const portfolioResponse = await getPortfolio(requestId);
     
     if (!portfolioResponse) {
@@ -318,8 +319,8 @@ signature = ${signature}`,
       try {
         const { account, data: { inputToken, amount: rawAmount, slippageBps = 100 } } = body;
         const amount = rawAmount.replace(',', '.');
-        
-        const [requestId, portfolioName] = params.portfolioId.split(':');
+        const decodedPortfolioId = decodeURIComponent(params.portfolioId);
+        const [requestId, portfolioName] = decodedPortfolioId.split(':');
         const validation = await validateTokenAmount(account, inputToken, amount);
         if (!validation.isValid) {
           return Response.json(validation.error, { status: 501 });
@@ -426,7 +427,8 @@ signature = ${signature}`,
         return action;
       } catch (error) {
         console.error('Error building transaction:', error);
-        const [requestId, portfolioName] = params.portfolioId.split(':');
+        const decodedPortfolioId = decodeURIComponent(params.portfolioId);
+        const [requestId, portfolioName] = decodedPortfolioId.split(':');
         const portfolioResponse = await getPortfolio(requestId);
         const portfolio = portfolioResponse ? findPortfolioByName(portfolioResponse, portfolioName) : null;
         return {

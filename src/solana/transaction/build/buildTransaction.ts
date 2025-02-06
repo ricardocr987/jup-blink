@@ -22,7 +22,6 @@ export async function buildTransaction(
   data: TransactionData, 
   priorityLevel?: "LOW" | "MEDIUM" | "HIGH" | "VERY_HIGH"
 ): Promise<string> {
-    const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
     const { instructions, lookupTableAddresses } = 
       await getTransactionInstructions(data);
       
@@ -39,6 +38,7 @@ export async function buildTransaction(
     );
 
     const fromPubkey = address(data.signer);
+    const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
     const message = pipe(
       createTransactionMessage({ version: 0 }),
       tx => setTransactionMessageFeePayer(fromPubkey, tx),
@@ -50,7 +50,10 @@ export async function buildTransaction(
       message, 
       lookupTableAccounts
     );
-    const compiledMessage = compileTransaction(messageWithLookupTables);
+    const compiledMessage = compileTransaction({
+      ...messageWithLookupTables,
+      lifetimeConstraint: latestBlockhash
+    });
     
     return getBase64EncodedWireTransaction(compiledMessage).toString();
 }

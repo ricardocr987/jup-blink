@@ -8,6 +8,7 @@ export const config = {
     JUPITER_API_KEY: process.env.JUPITER_API_KEY!,
     ALEXANDRIA_API_URL: process.env.ALEXANDRIA_API_URL || 'http://localhost:8000',
     ALEXANDRIA_API_KEY: process.env.ALEXANDRIA_API_KEY!,
+    JUPITER_FEE_ACCOUNT: process.env.JUPITER_FEE_ACCOUNT!,
 };
   
 const requiredEnvVariables = [
@@ -15,6 +16,7 @@ const requiredEnvVariables = [
     "HELIUS_API_KEY",
     "BIRDEYE_API_KEY",
     "ALEXANDRIA_API_KEY",
+    "JUPITER_FEE_ACCOUNT",
 ];
   
 requiredEnvVariables.forEach((variable) => {

@@ -1,10 +1,17 @@
 import { 
   type FullySignedTransaction, 
   type TransactionWithBlockhashLifetime,
+} from '@solana/transactions';
+import { 
+  getBase64Decoder,
   getBase64Encoder,
-  getTransactionDecoder
+  getTransactionDecoder,
 } from '@solana/web3.js';
-import { sendAndConfirmTransaction } from './confirm';
+import { sendAndConfirmTransactionFactory } from '@solana/web3.js';
+import { rpc } from '../rpc';
+import { rpcSubscriptions } from './confirm';
+
+const sendAndConfirmTransaction = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
 
 export async function sendTransaction(transaction: string): Promise<string> {
     const base64Encoder = getBase64Encoder();
@@ -13,9 +20,6 @@ export async function sendTransaction(transaction: string): Promise<string> {
     const transactionDecoder = getTransactionDecoder();
     const decodedTx = transactionDecoder.decode(transactionBytes) as FullySignedTransaction & TransactionWithBlockhashLifetime;
 
-    const signature = Object.entries(decodedTx.signatures)[0]?.[1]?.toString();
-    if (!signature) throw new Error('No signature found');
-
     await sendAndConfirmTransaction(
       decodedTx,
       {
@@ -23,6 +27,6 @@ export async function sendTransaction(transaction: string): Promise<string> {
         maxRetries: 3n
       }
     );
-    
-    return signature;
+
+    return '';
 }
