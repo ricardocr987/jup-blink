@@ -12,6 +12,8 @@ import { getPrices } from './solana/fetcher/getPrices';
 import { getMints } from './solana/fetcher/getMint';
 import { SwapData } from './solana/transaction/types';
 import { message, validateTokenAmount, verifySignature } from './validate';
+import { sendTransaction } from './solana/transaction/send';
+import { validateTransaction } from './solana/transaction/validate';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
@@ -474,6 +476,42 @@ signature = ${signature}`,
           }
         }
       }
+    }
+  )
+  .post(
+    "/api/sendTransaction/:portfolioId",
+    async ({ body, params }: { 
+      body: { 
+        transaction: string;
+      },
+      params: {
+        portfolioId: string;
+      } 
+    }) => {
+      try {
+        const signature = await sendTransaction(body.transaction);
+
+        /* To-do
+        validateTransaction(
+          txSignature,
+          body.portfolioId
+        ).catch(error => {
+          console.error("Validation error:", error);
+        });*/
+
+        return { signature, status: 200 };
+      } catch (error: any) {
+        console.error("Error sending transaction:", error);
+        return { signature: '', status: 500 };
+      }
+    },
+    {
+      body: t.Object({
+        transaction: t.String(),
+      }),
+      params: t.Object({
+        portfolioId: t.String()
+      })
     }
   )
   .listen(3000);
