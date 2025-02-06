@@ -17,6 +17,11 @@ import { SwapData } from './solana/transaction/types';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
+// check if envs are set
+if (!process.env.RPC_KEY || !process.env.BIRDEYE_API_KEY) {
+  throw new Error('Missing environment variables, required: RPC_KEY, BIRDEYE_API_KEY');
+}
+
 const ACTION_HEADERS: Record<string, string> = {
   'X-Action-Version': '2.1.3',
   'X-Blockchain-Ids': 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
