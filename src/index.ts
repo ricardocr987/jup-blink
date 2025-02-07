@@ -370,6 +370,19 @@ signature = ${signature}`,
           throw new Error(`Could not get price or mint info for input token ${inputToken}`);
         }
 
+        // Calculate total input amount and fee
+        const parsedAmount = new BigNumber(amount)
+          .multipliedBy(10 ** inputTokenMint.decimals);
+
+        const feeAmount = parsedAmount
+          .multipliedBy(0.01) // 1% fee
+          .decimalPlaces(0, BigNumber.ROUND_DOWN)
+          .toNumber();
+
+        const amountAfterFee = parsedAmount
+          .minus(feeAmount)
+          .decimalPlaces(0, BigNumber.ROUND_DOWN);
+
         const swaps = Object.values(portfolio.portfolio_metrics.token_metrics)
           .map(token => {
             // Skip if input and output tokens are the same
@@ -387,9 +400,8 @@ signature = ${signature}`,
             }
 
             // Calculate the input amount needed for this swap based on portfolio weight
-            const inputAmount = new BigNumber(amount)
+            const inputAmount = amountAfterFee
               .multipliedBy(token.weight)
-              .multipliedBy(10 ** inputTokenMint.decimals)
               .decimalPlaces(0, BigNumber.ROUND_DOWN);
 
             if (inputAmount.isLessThanOrEqualTo(0)) {
@@ -414,6 +426,7 @@ signature = ${signature}`,
           signer: account as Address,
           swaps,
           slippageBps: Number(slippageBps),
+          feeAmount, // Add the fee amount to transaction data
         };
 
         const transaction = await buildTransaction(transactionData);

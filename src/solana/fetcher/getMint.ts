@@ -1,5 +1,5 @@
 import { address } from "@solana/addresses";
-import { decodeMint, type Mint } from "@solana-program/token";
+import { decodeMint } from "@solana-program/token";
 import { rpc } from "../rpc";
 import type { EncodedAccount } from "@solana/accounts";
 import { ReadonlyUint8Array } from "@solana/web3.js";

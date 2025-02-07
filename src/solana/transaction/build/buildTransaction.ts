@@ -19,13 +19,13 @@ import { getTransactionInstructions } from './instructions';
 import { rpc } from '../../rpc';
 
 export async function buildTransaction(
-  data: TransactionData, 
+  data: TransactionData & { feeAmount?: number }, 
   priorityLevel?: "LOW" | "MEDIUM" | "HIGH" | "VERY_HIGH"
 ): Promise<string> {
     const { instructions, lookupTableAddresses } = 
       await getTransactionInstructions(data);
       
-      const lookupTableAccounts = await fetchLookupTables(
+    const lookupTableAccounts = await fetchLookupTables(
       lookupTableAddresses as Address[], 
       rpc
     );

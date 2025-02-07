@@ -22,7 +22,7 @@ export type TokenInfo = {
 
 const THRESHOLD_VALUE_USD = new BigNumber(0.1);
 const WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112";
-const SOL_MINT = 'So11111111111111111111111111111111111111112';
+export const SOL_MINT = 'So11111111111111111111111111111111111111112';
 const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
 function calculateValue(tokenAmount: TokenAmount, decimals: number, price: number): BigNumber {
