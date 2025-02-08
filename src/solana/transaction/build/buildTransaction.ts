@@ -14,16 +14,34 @@ import {
   fetchJsonParsedAccounts,
 } from '@solana/web3.js';
 import { prepareComputeBudget } from '../prepare';
-import { TransactionData } from '../types';
+import { TransactionData, SwapData } from '../types';
 import { getTransactionInstructions } from './instructions';
 import { rpc } from '../../rpc';
+
+export interface TransactionResponse {
+  transaction: string;
+  nextSwapsInfo?: {
+    remainingSwaps: SwapData[];
+    account: string;
+    slippageBps: number;
+  };
+}
 
 export async function buildTransaction(
   data: TransactionData & { feeAmount?: number }, 
   priorityLevel?: "LOW" | "MEDIUM" | "HIGH" | "VERY_HIGH"
-): Promise<string> {
+): Promise<TransactionResponse> {
+    const currentSwaps = data.swaps.slice(0, 3);
+    const remainingSwaps = data.swaps.slice(3);
+
+    const transactionData = {
+      ...data,
+      swaps: currentSwaps,
+      feeAmount: data.feeAmount
+    };
+
     const { instructions, lookupTableAddresses } = 
-      await getTransactionInstructions(data);
+      await getTransactionInstructions(transactionData);
       
     const lookupTableAccounts = await fetchLookupTables(
       lookupTableAddresses as Address[], 
@@ -55,7 +73,20 @@ export async function buildTransaction(
       lifetimeConstraint: latestBlockhash
     });
     
-    return getBase64EncodedWireTransaction(compiledMessage).toString();
+    const transaction = getBase64EncodedWireTransaction(compiledMessage).toString();
+
+    if (remainingSwaps.length > 0) {
+      return {
+        transaction,
+        nextSwapsInfo: {
+          remainingSwaps,
+          account: data.signer,
+          slippageBps: data.slippageBps,
+        }
+      };
+    }
+
+    return { transaction };
 }
 
 type FetchedAddressLookup = {

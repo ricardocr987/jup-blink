@@ -66,15 +66,12 @@ async function getComputeUnits(wireTransaction: Base64EncodedWireTransaction): P
       encoding: 'base64'
     }).send();
 
-    console.log(simulation.value.logs)
     if (simulation.value.err) {
       console.log('Simulation error:', JSON.stringify(simulation.value.err));
       return DEFAULT_COMPUTE_UNITS;
     }
 
-    const computeUnits = Number(simulation.value.unitsConsumed) || DEFAULT_COMPUTE_UNITS;
-    console.log('Simulation units:', computeUnits);
-    return computeUnits;
+    return Number(simulation.value.unitsConsumed) || DEFAULT_COMPUTE_UNITS;
   } catch (error) {
     console.error('Error simulating transaction:', error);
     throw error;

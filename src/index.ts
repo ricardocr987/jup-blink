@@ -426,15 +426,18 @@ signature = ${signature}`,
           signer: account as Address,
           swaps,
           slippageBps: Number(slippageBps),
-          feeAmount, // Add the fee amount to transaction data
+          feeAmount, // Fee only included in first transaction
         };
 
-        const transaction = await buildTransaction(transactionData);
+        const transactionResponse = await buildTransaction(transactionData);
 
         const action: ActionPostResponse = {
           type: "transaction",
-          transaction,
-          message: `Swap completed successfully`
+          transaction: transactionResponse.transaction,
+          message: `Swap initiated successfully`,
+          ...(transactionResponse.nextSwapsInfo && {
+            nextSwapsInfo: transactionResponse.nextSwapsInfo
+          })
         };
 
         return action;
@@ -495,24 +498,37 @@ signature = ${signature}`,
   )
   .post(
     "/api/sendTransaction/:portfolioId",
-    async ({ body, params }: { 
-      body: { 
-        transaction: string;
-      },
-      params: {
-        portfolioId: string;
-      } 
-    }) => {
+    async ({ body, params }) => {
       try {
-        const signature = await sendTransaction(body.transaction);
+        const { transaction, nextSwapsInfo } = body;
+        const signature = await sendTransaction(transaction);
 
-        /* To-do
-        validateTransaction(
-          txSignature,
-          body.portfolioId
-        ).catch(error => {
-          console.error("Validation error:", error);
-        });*/
+        if (nextSwapsInfo) {
+          // Parse only once since it's already a JSON string
+          const parsedData = typeof nextSwapsInfo === 'string' 
+            ? JSON.parse(nextSwapsInfo) 
+            : nextSwapsInfo;
+          
+          if (parsedData.remainingSwaps?.length > 0) {
+            const nextTransactionData = {
+              type: "swap" as const,
+              signer: parsedData.account as Address,
+              swaps: parsedData.remainingSwaps,
+              slippageBps: parsedData.slippageBps
+            };
+
+            const nextTransactionResponse = await buildTransaction(nextTransactionData);
+
+            return {
+              signature,
+              status: 200,
+              transaction: nextTransactionResponse.transaction,
+              ...(nextTransactionResponse.nextSwapsInfo && {
+                nextSwapsInfo: JSON.stringify(nextTransactionResponse.nextSwapsInfo)
+              })
+            };
+          }
+        }
 
         return { signature, status: 200 };
       } catch (error: any) {
@@ -523,6 +539,7 @@ signature = ${signature}`,
     {
       body: t.Object({
         transaction: t.String(),
+        nextSwapsInfo: t.Optional(t.String())
       }),
       params: t.Object({
         portfolioId: t.String()
