@@ -14,6 +14,7 @@ import { SwapData } from './solana/transaction/types';
 import { message, validateTokenAmount, verifySignature } from './validate';
 import { sendTransaction } from './solana/transaction/send';
 import { validateTransaction } from './solana/transaction/validate';
+import { getTokenMetadata } from './solana/fetcher/getTokenMetadata';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
@@ -21,6 +22,12 @@ const ACTION_HEADERS: Record<string, string> = {
   'X-Action-Version': '2.1.3',
   'X-Blockchain-Ids': 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
   'Content-Type': 'application/json'
+};
+
+// Add this type definition near the top of the file
+type TransactionSwapInfo = {
+  inputToken: string;
+  outputTokens: string[];
 };
 
 const app = new Elysia()
@@ -426,15 +433,30 @@ signature = ${signature}`,
           signer: account as Address,
           swaps,
           slippageBps: Number(slippageBps),
-          feeAmount, // Fee only included in first transaction
+          feeAmount,
         };
 
         const transactionResponse = await buildTransaction(transactionData);
 
-        const action: ActionPostResponse = {
+        // Get token metadata only for the first 3 swaps (matching buildTransaction.ts behavior)
+        const currentSwaps = swaps.slice(0, 3);
+        
+        // Get token metadata for creating swap info
+        const [inputTokenMetadata, ...outputTokensMetadata] = await Promise.all([
+          getTokenMetadata(inputToken),
+          ...currentSwaps.map(swap => getTokenMetadata(swap.outputToken))
+        ]);
+        
+        const transactionSwapInfo: TransactionSwapInfo = {
+          inputToken: inputTokenMetadata.symbol,
+          outputTokens: outputTokensMetadata.map(t => t.symbol)
+        };
+
+        const action = {
           type: "transaction",
           transaction: transactionResponse.transaction,
           message: `Swap initiated successfully`,
+          transactionSwapInfo,
           ...(transactionResponse.nextSwapsInfo && {
             nextSwapsInfo: transactionResponse.nextSwapsInfo
           })
@@ -500,11 +522,10 @@ signature = ${signature}`,
     "/api/sendTransaction/:portfolioId",
     async ({ body, params }) => {
       try {
-        const { transaction, nextSwapsInfo } = body;
+        const { transaction, nextSwapsInfo, transactionSwapInfo } = body;
         const signature = await sendTransaction(transaction);
 
         if (nextSwapsInfo) {
-          // Parse only once since it's already a JSON string
           const parsedData = typeof nextSwapsInfo === 'string' 
             ? JSON.parse(nextSwapsInfo) 
             : nextSwapsInfo;
@@ -519,10 +540,26 @@ signature = ${signature}`,
 
             const nextTransactionResponse = await buildTransaction(nextTransactionData);
 
+            // Create next transaction swap info
+            const nextSwapsTokenMetadata = await Promise.all(
+              parsedData.remainingSwaps.map((swap: SwapData) => 
+                Promise.all([
+                  getTokenMetadata(swap.inputToken),
+                  getTokenMetadata(swap.outputToken)
+                ])
+              )
+            );
+
+            const nextTransactionSwapInfo: TransactionSwapInfo = {
+              inputToken: nextSwapsTokenMetadata[0][0].symbol,
+              outputTokens: nextSwapsTokenMetadata.map(([_, output]) => output.symbol)
+            };
+
             return {
               signature,
               status: 200,
               transaction: nextTransactionResponse.transaction,
+              transactionSwapInfo: nextTransactionSwapInfo,
               ...(nextTransactionResponse.nextSwapsInfo && {
                 nextSwapsInfo: JSON.stringify(nextTransactionResponse.nextSwapsInfo)
               })
@@ -530,7 +567,11 @@ signature = ${signature}`,
           }
         }
 
-        return { signature, status: 200 };
+        return { 
+          signature, 
+          status: 200,
+          transactionSwapInfo
+        };
       } catch (error: any) {
         console.error("Error sending transaction:", error);
         return { signature: '', status: 500 };
@@ -539,7 +580,11 @@ signature = ${signature}`,
     {
       body: t.Object({
         transaction: t.String(),
-        nextSwapsInfo: t.Optional(t.String())
+        nextSwapsInfo: t.Optional(t.String()),
+        transactionSwapInfo: t.Object({
+          inputToken: t.String(),
+          outputTokens: t.Array(t.String())
+        })
       }),
       params: t.Object({
         portfolioId: t.String()
