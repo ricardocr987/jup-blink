@@ -465,6 +465,7 @@ signature = ${signature}`,
         return action;
       } catch (error) {
         console.error('Error building transaction:', error);
+        console.log(error instanceof Error ? error.message : 'Ups. Something went wrong');
         const decodedPortfolioId = decodeURIComponent(params.portfolioId);
         const [requestId, portfolioName] = decodedPortfolioId.split(':');
         const portfolioResponse = await getPortfolio(requestId);
@@ -476,7 +477,7 @@ signature = ${signature}`,
           description: 'Failed to build the swap transaction. Please try again.',
           label: 'Try Again',
           error: {
-            message: 'Failed to build transaction',
+            message: error instanceof Error ? error.message : 'Ups. Something went wrong',
           }
         } satisfies Action;
       }

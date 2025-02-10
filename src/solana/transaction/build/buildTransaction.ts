@@ -31,6 +31,7 @@ export async function buildTransaction(
   data: TransactionData & { feeAmount?: number }, 
   priorityLevel?: "LOW" | "MEDIUM" | "HIGH" | "VERY_HIGH"
 ): Promise<TransactionResponse> {
+  try {
     const currentSwaps = data.swaps.slice(0, 3);
     const remainingSwaps = data.swaps.slice(3);
 
@@ -87,6 +88,9 @@ export async function buildTransaction(
     }
 
     return { transaction };
+  } catch (error) {
+    throw error;
+  }
 }
 
 type FetchedAddressLookup = {

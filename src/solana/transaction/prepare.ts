@@ -59,23 +59,25 @@ const DEFAULT_COMPUTE_UNITS = 1_400_000;
 const DEFAULT_PRIORITY_FEE = 50000;
 
 async function getComputeUnits(wireTransaction: Base64EncodedWireTransaction): Promise<number> {
-  try {
-    const simulation = await rpc.simulateTransaction(wireTransaction, {
-      replaceRecentBlockhash: true,
-      sigVerify: false,
-      encoding: 'base64'
-    }).send();
+  const simulation = await rpc.simulateTransaction(wireTransaction, {
+    replaceRecentBlockhash: true,
+    sigVerify: false,
+    encoding: 'base64'
+  }).send();
 
-    if (simulation.value.err) {
-      console.log(simulation.value.logs)
-      return DEFAULT_COMPUTE_UNITS;
+  if (simulation.value.err && simulation.value.logs) {
+    console.log('Solana simulation error:', simulation.value.logs);
+
+    for (const log of simulation.value.logs) {
+      if (log.includes('0x1771')) {
+        throw new Error('Maximum slippage reached');
+      }
     }
 
-    return Number(simulation.value.unitsConsumed) || DEFAULT_COMPUTE_UNITS;
-  } catch (error) {
-    console.error('Error simulating transaction:', error);
-    throw error;
+    throw new Error('Transaction simulation error');
   }
+
+  return Number(simulation.value.unitsConsumed) || DEFAULT_COMPUTE_UNITS;
 }
 
 async function getPriorityFeeEstimate(

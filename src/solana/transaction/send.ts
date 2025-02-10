@@ -29,14 +29,26 @@ export async function sendTransaction(transaction: string): Promise<string> {
       ...decodedTx,
       lifetimeConstraint: decompiledTransactionMessage.lifetimeConstraint,
     } as FullySignedTransaction & TransactionWithBlockhashLifetime;
-    await sendAndConfirmTransaction(
-      signedTransactionWithLifetime,
-      {
-        commitment: 'confirmed',
-        maxRetries: 3n,
-        skipPreflight: true
-      }
-    );
 
-    return getSignatureFromTransaction(signedTransactionWithLifetime);
+    let retries = 0;
+    const maxRetries = 3;
+
+    while (retries < maxRetries) {
+      try {
+        await sendAndConfirmTransaction(
+          signedTransactionWithLifetime,
+          {
+            commitment: 'confirmed',
+            skipPreflight: true
+          }
+        );
+
+        return getSignatureFromTransaction(signedTransactionWithLifetime);
+      } catch (error) {
+        retries++;
+        console.error('Error sending transaction:', error);
+      }
+    }
+
+    throw new Error('Failed to send transaction');
 }
