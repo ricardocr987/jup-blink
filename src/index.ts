@@ -382,7 +382,7 @@ signature = ${signature}`,
           .multipliedBy(10 ** inputTokenMint.decimals);
 
         const feeAmount = parsedAmount
-          .multipliedBy(0.01) // 1% fee
+          .multipliedBy(0.025) // 2.5% fee
           .decimalPlaces(0, BigNumber.ROUND_DOWN)
           .toNumber();
 

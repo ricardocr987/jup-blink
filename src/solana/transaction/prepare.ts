@@ -67,7 +67,7 @@ async function getComputeUnits(wireTransaction: Base64EncodedWireTransaction): P
     }).send();
 
     if (simulation.value.err) {
-      console.log('Simulation error:', JSON.stringify(simulation.value.err));
+      console.log(simulation.value.logs)
       return DEFAULT_COMPUTE_UNITS;
     }
 
