@@ -17,6 +17,7 @@
     "@solana-program/token": "^0.4.1",
     "@solana/actions": "^1.6.6",
     "@solana/addresses": "^2.0.0",
+    "@solana/compat": "^2.0.0",
     "@solana/keys": "^2.0.0",
     "@solana/rpc-types": "^2.0.0",
     "@solana/signers": "^2.0.0",
